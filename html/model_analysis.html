@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>model/ Super Resolution 小模型分析</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <article class="paper">
+      <p class="eyebrow">Model Analysis</p>
+      <h1>model/ Super Resolution 小模型分析</h1>
+      <p class="meta">目標：解析模型架構、tensor shape、weight shape、activation、quantization，找出 FPGA/PL 需要支援的最小運算集合。</p>
+      <nav class="top-nav">
+        <a href="index.html">回首頁</a>
+        <a href="ref_analysis.html">參考分析</a>
+        <a href="test_project_plan.html">Test Project</a>
+        <a href="rtl_module_plan.html">RTL Module</a>
+      </nav>
+
+      <h2>1. model/ 檔案</h2>
+      <table>
+        <thead><tr><th>檔案</th><th>用途</th></tr></thead>
+        <tbody>
+          <tr><td><code>bilinearpp.py</code></td><td>Keras/TensorFlow 小型 SR 模型定義。</td></tr>
+          <tr><td><code>Bilinear_PP_v5_test.log</code></td><td>浮點模型 training log，模型參數約 0.12K。</td></tr>
+          <tr><td><code>Bilinear_PP_v5_test_qat.log</code></td><td>QAT training log，列出 quantize wrapper 與訓練結果，模型參數約 0.15K。</td></tr>
+          <tr><td><code>Bilinear_PP_v5_test_qat.tflite</code></td><td>動態輸入尺寸的 uint8 TFLite，shape signature 為 <code>[1,-1,-1,1]</code>。</td></tr>
+          <tr><td><code>Bilinear_PP_v5_test_qat_time.tflite</code></td><td>固定輸入尺寸的 uint8 TFLite，input 為 <code>[1,256,320,1]</code>。</td></tr>
+          <tr><td><code>Bilinear_PP_v5_test_tflite.log</code></td><td>TFLite conversion / validation log，包含 TFLite ops、scale、PSNR。</td></tr>
+        </tbody>
+      </table>
+
+      <h2>2. 模型架構</h2>
+      <p><code>bilinearpp.py</code> 定義的模型是非常小的單通道 x2 Super Resolution：</p>
+      <pre>Input lr_input: [1, H, W, 1], float range 約 0..1
+  ↓
+Conv2D 3x3, Cin=1, Cout=8, padding=same, bias=True
+  ↓
+ReLU
+  ↓
+Conv2D 1x1, Cin=8, Cout=4, padding=same, bias=True
+  ↓
+PixelShuffle / DepthToSpace scale=2
+  ↓
+clipped ReLU, clamp 0..1
+  ↓
+Output: [1, 2H, 2W, 1]</pre>
+
+      <div class="callout good">
+        對 FPGA 來說，這個模型很適合逐步驗證：只有一個 3x3 conv、一個 1x1 conv、一個 PixelShuffle、簡單 clamp，沒有 BatchNorm、Add residual、mask 或複雜 attention。
+      </div>
+
+      <h2>3. Layer Shape 與 Weight Shape</h2>
+      <table>
+        <thead><tr><th>Layer</th><th>輸入 shape</th><th>權重 shape</th><th>輸出 shape</th><th>硬體運算</th></tr></thead>
+        <tbody>
+          <tr>
+            <td><code>conv1_conv</code></td>
+            <td><code>[1,H,W,1]</code></td>
+            <td>Keras: <code>[3,3,1,8]</code><br>TFLite: <code>[8,3,3,1]</code></td>
+            <td><code>[1,H,W,8]</code></td>
+            <td>3x3 int8 convolution，int32 accumulation，bias，requantization，ReLU。</td>
+          </tr>
+          <tr>
+            <td><code>conv3</code></td>
+            <td><code>[1,H,W,8]</code></td>
+            <td>Keras: <code>[1,1,8,4]</code><br>TFLite: <code>[4,1,1,8]</code></td>
+            <td><code>[1,H,W,4]</code></td>
+            <td>1x1 int8 convolution，int32 accumulation，bias，requantization。</td>
+          </tr>
+          <tr>
+            <td><code>pixel_shuffle</code></td>
+            <td><code>[1,H,W,4]</code></td>
+            <td>無</td>
+            <td><code>[1,2H,2W,1]</code></td>
+            <td>Depth-to-Space address mapping。</td>
+          </tr>
+          <tr>
+            <td><code>clipped_relu</code></td>
+            <td><code>[1,2H,2W,1]</code></td>
+            <td>無</td>
+            <td><code>[1,2H,2W,1]</code></td>
+            <td>限制輸出在 0..1，量化後等效為 min/max clamp。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h2>4. TFLite Tensor 與 Quantization</h2>
+      <p>以下資訊由本地解析 TFLite flatbuffer 與 conversion log 整理。TFLite 內部主要使用 int8 tensor，模型輸入/輸出對外是 uint8。</p>
+
+      <h3>4.1 動態輸入版：Bilinear_PP_v5_test_qat.tflite  ( 0.003921568859=1/255 )</h3>
+      <table>
+        <thead><tr><th>Tensor</th><th>dtype</th><th>shape / signature</th><th>scale</th><th>zero point</th></tr></thead>
+        <tbody>
+          <tr><td>Input <code>lr_input</code></td><td>UINT8</td><td>shape <code>[1,1,1,1]</code><br>signature <code>[1,-1,-1,1]</code></td><td><code>0.003921568859 </code></td><td><code>0</code></td></tr>
+          <tr><td>Internal input <code>tfl.quantize</code></td><td>INT8</td><td><code>[1,-1,-1,1]</code></td><td><code>0.003921568859</code></td><td><code>-128</code></td></tr>
+          <tr><td>Conv1 output / ReLU</td><td>INT8</td><td><code>[1,-1,-1,8]</code></td><td><code>0.008535092697</code></td><td><code>-128</code></td></tr>
+          <tr><td>Conv3 output</td><td>INT8</td><td><code>[1,-1,-1,4]</code></td><td><code>0.003921568859</code></td><td><code>-128</code></td></tr>
+          <tr><td>DepthToSpace output</td><td>INT8</td><td><code>[1,-1,-1,1]</code></td><td><code>0.003921568859</code></td><td><code>-128</code></td></tr>
+          <tr><td>Final output <code>Identity</code></td><td>UINT8</td><td><code>[1,-1,-1,1]</code></td><td><code>0.003922311589</code></td><td><code>0</code></td></tr>
+        </tbody>
+      </table>
+      <div class="callout warn">
+        Relu 是在 requant 後作用，故Relu的 0點 是 Conv1 output tensor 的 zero_point >>if (q < z3) 則 q = z3;
+      </div>
+
+      <h3>4.2 固定輸入版：Bilinear_PP_v5_test_qat_time.tflite</h3>
+      <table>
+        <thead><tr><th>Tensor</th><th>dtype</th><th>shape</th><th>scale</th><th>zero point</th></tr></thead>
+        <tbody>
+          <tr><td>Input <code>lr_input</code></td><td>UINT8</td><td><code>[1,256,320,1]</code></td><td><code>0.003583237296</code></td><td><code>0</code></td></tr>
+          <tr><td>Internal input <code>tfl.quantize</code></td><td>INT8</td><td><code>[1,256,320,1]</code></td><td><code>0.003583237296</code></td><td><code>-128</code></td></tr>
+          <tr><td>Conv1 output / ReLU</td><td>INT8</td><td><code>[1,256,320,8]</code></td><td><code>0.008535092697</code></td><td><code>-128</code></td></tr>
+          <tr><td>Conv3 output</td><td>INT8</td><td><code>[1,256,320,4]</code></td><td><code>0.003820519894</code></td><td><code>-128</code></td></tr>
+          <tr><td>DepthToSpace output</td><td>INT8</td><td><code>[1,512,640,1]</code></td><td><code>0.003820519894</code></td><td><code>-128</code></td></tr>
+          <tr><td>Final output <code>Identity</code></td><td>UINT8</td><td><code>[1,512,640,1]</code></td><td><code>0.003922311589</code></td><td><code>0</code></td></tr>
+        </tbody>
+      </table>
+
+      <div class="callout warn">
+        conversion log 中顯示 active input scale 為 <code>0.003921568859</code>，但固定版 flatbuffer 解析到 input scale 為 <code>0.003583237296</code>。後續產生 golden data 時必須明確指定使用哪一個 TFLite 檔，並用同一個檔案 dump per-layer tensor，避免 scale 混用。
+      </div>
+
+      <h3>4.3 Weight 與 Bias Quantization</h3>
+      <table>
+        <thead><tr><th>Layer</th><th>Weight dtype / shape</th><th>Weight scale</th><th>Weight zero point</th><th>Bias shape / scale</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Conv1</td>
+            <td>INT8, <code>[8,3,3,1]</code></td>
+            <td><code>[0.0069225999, 0.0067954585, 0.0102698440, 0.0051727756, 0.0045626052, 0.0066295844, 0.0061150738, 0.0049605784]</code></td>
+            <td>全部 <code>0</code></td>
+            <td>INT32, <code>[8]</code><br>scale 約為 input scale × per-channel weight scale。</td>
+          </tr>
+          <tr>
+            <td>Conv3</td>
+            <td>INT8, <code>[4,1,1,8]</code></td>
+            <td><code>[0.0064637344, 0.0050259545, 0.0062292092, 0.0104128467]</code></td>
+            <td>全部 <code>0</code></td>
+            <td>INT32, <code>[4]</code><br>scale 約為 conv1 output scale × per-channel weight scale。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>以動態版 TFLite 解析到的 bias scale 為例：</p>
+      <pre>Conv1 bias scale:
+[2.7147453e-05, 2.6648859e-05, 4.0273899e-05, 2.0285395e-05,
+ 1.7892571e-05, 2.5998372e-05, 2.3980683e-05, 1.9453249e-05]
+
+Conv3 bias scale:
+[5.5168577e-05, 4.2896987e-05, 5.3166877e-05, 8.8874614e-05]</pre>
+
+      <h2>5. TFLite Ops 與 Activation</h2>
+      <p>conversion log 顯示 TFLite ops：</p>
+      <pre>CONV_2D, DEPTH_TO_SPACE, MINIMUM, QUANTIZE, RELU</pre>
+
+      <table>
+        <thead><tr><th>Op</th><th>意義</th><th>硬體支援方式</th></tr></thead>
+        <tbody>
+          <tr><td><code>QUANTIZE</code></td><td>UINT8 input 轉成 internal INT8。</td><td><code>q_s8 = q_u8 - 128</code>，scale 依 TFLite 檔案。</td></tr>
+          <tr><td><code>CONV_2D</code></td><td>Conv1 3x3 與 Conv3 1x1。</td><td>int8 × int8，int32 accumulate，int32 bias。</td></tr>
+          <tr><td><code>DEPTH_TO_SPACE</code></td><td>PixelShuffle scale=2。</td><td>使用既有 <code>ref/pixel_sulffle</code> address mapping。</td></tr>
+          <tr><td><code>MINIMUM</code></td><td>clipped ReLU 的上限 clamp。</td><td>限制最大值為 1.0 對應的 quantized value。</td></tr>
+          <tr><td><code>RELU</code></td><td>clamp 下限 0。</td><td>限制最小值為 zero point 對應的 0。</td></tr>
+        </tbody>
+      </table>
+
+      <h2>6. Quantized Convolution 硬體公式</h2>
+      <p>TFLite int8 convolution 的基本概念如下。Activation zero point 可能是 <code>-128</code>，weight zero point 是 <code>0</code>。</p>
+      <pre>acc_int32[co] =
+  bias_int32[co]
+  + Σ (input_int8 - input_zero_point) * weight_int8[co]
+
+requantized =
+  round(acc_int32 * input_scale * weight_scale[co] / output_scale)
+  + output_zero_point
+
+output_int8 =
+  clamp(requantized, -128, 127)</pre>
+
+      <p>Conv1 後需要 ReLU，因此 int8 output 下限要 clamp 到 output zero point：</p>
+      <pre>if real_value < 0:
+  output_int8 = output_zero_point</pre>
+
+      <p>Final output 對外是 UINT8，因此最後一步需要從 internal INT8 轉回 UINT8：</p>
+      <pre>uint8_output_real = (int8_internal - zp_internal) * scale_internal
+uint8_q = round(uint8_output_real / output_scale) + output_zero_point</pre>
+
+      <h2>7. PixelShuffle 不可替代</h2>
+      <p>模型最後使用的是 PixelShuffle / DepthToSpace。後續硬體必須保留這個排列方式，不應改成 Bilinear、Nearest Neighbor、Transposed Convolution 或 Deconvolution。</p>
+      <pre>Conv3 output: [1,H,W,4]
+
+每個位置有四個 channel:
+  c0, c1, c2, c3
+
+PixelShuffle scale=2:
+  c0 → HR(2y,   2x)
+  c1 → HR(2y,   2x+1)
+  c2 → HR(2y+1, 2x)
+  c3 → HR(2y+1, 2x+1)</pre>
+
+      <h2>8. FPGA 需要支援的基本運算</h2>
+      <table>
+        <thead><tr><th>運算</th><th>必要性</th><th>第一版建議</th></tr></thead>
+        <tbody>
+          <tr><td>UINT8 → INT8 轉換</td><td>模型外部 input 是 uint8，內部 tensor 是 int8。</td><td>先在 PL loader 或 PS 預處理做，需與 TFLite golden 一致。</td></tr>
+          <tr><td>3x3 window generation</td><td>Conv1 需要 same padding 的 3x3 window。</td><td>參考 <code>stream_window_3x3_cin8</code>，先做小 patch。</td></tr>
+          <tr><td>int8 × int8 MAC</td><td>Conv1/Conv3 核心運算。</td><td>先支援小 Cout，int32 accumulate。</td></tr>
+          <tr><td>bias add</td><td>TFLite Conv2D 有 int32 bias。</td><td>每個 output channel 一個 bias。</td></tr>
+          <tr><td>per-channel requantization</td><td>weight 是 per-channel quantization。</td><td>先用 PS 產生 multiplier/shift，PL 做 fixed-point multiply + shift。</td></tr>
+          <tr><td>ReLU / clamp</td><td>Conv1 ReLU 與 final clipped ReLU。</td><td>用比較器與 saturate。</td></tr>
+          <tr><td>PixelShuffle address mapping</td><td>模型輸出放大 x2 的必要步驟。</td><td>重用 <code>ref/pixel_sulffle</code> 設計。</td></tr>
+          <tr><td>Output pack/unpack</td><td>PS/PL 透過 32-bit AXI stream 搬 byte。</td><td>參考 <code>connect.v</code>。</td></tr>
+        </tbody>
+      </table>
+
+      <h2>9. 對逐步部署的意義</h2>
+      <p>這個模型很小，因此適合用逐步驗證方式部署：</p>
+      <pre>Stage 3A: 單層 Conv1 小 patch，先不做 PixelShuffle
+Stage 3B: Conv1 + ReLU + requantization
+Stage 3C: Conv3 1x1，產生 4-channel sub-pixel tensor
+Stage 4A: Conv3 output 接 PixelShuffle，輸出 HR patch
+Stage 4B: 加 final clamp 與 uint8 output
+Stage 5: 完整 input image / patch，PS 與 TFLite golden 比對</pre>
+
+      <p class="footer">下一頁：<a href="test_project_plan.html">test_project_plan.html</a></p>
+    </article>
+  </main>
+</body>
+</html>
