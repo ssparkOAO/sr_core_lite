@@ -1,0 +1,42 @@
+GitHub 帳號資訊
+建立日期：2026-06-02
+
+一、GitHub 帳號
+
+帳號名稱：
+ssparkOAO
+
+GitHub 個人頁：
+https://github.com/ssparkOAO
+
+二、目前專案 Repository
+
+Repository 名稱：
+sr_core_lite
+
+Repository 網址：
+https://github.com/ssparkOAO/sr_core_lite
+
+Git remote URL：
+https://github.com/ssparkOAO/sr_core_lite.git
+
+本機 Git 根目錄：
+C:\M11413047\codex\final_proj\model_lite\sr_core
+
+三、GitHub Pages 網址
+
+SR Core HTML 首頁：
+https://ssparkoao.github.io/sr_core_lite/html/
+
+GitHub / Pages / push 學習筆記：
+https://ssparkoao.github.io/sr_core_lite/learning/github-pages-git/
+
+模型分析頁：
+https://ssparkoao.github.io/sr_core_lite/html/model_analysis.html
+
+四、重要提醒
+
+1. 不要把 GitHub 密碼、Personal Access Token、SSH private key 寫進專案。
+2. GitHub 不會自動知道本機修改，只有 git push 之後才會上傳。
+3. GitHub Pages 通常會在 push 後自動更新，但可能需要等幾十秒到幾分鐘。
+4. 這份檔案只記錄公開資訊與專案連結，方便之後查找。
