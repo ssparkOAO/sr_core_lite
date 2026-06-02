@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase8 Weight Memory Architecture Refactor</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>Phase8 Weight Memory Architecture Refactor</h1>
+      <p class="small">文件位置：<code>model_lite/sr_core/html/phase8_index.html</code></p>
+      <p class="small">RTL_sys：<code>model_lite/sr_core/RTL_sys/phase8_weight_memory/</code></p>
+      <p class="small">返回：<a href="RTL_sys_index.html">RTL_sys_index.html</a></p>
+      <p>
+        Phase8 是 <code>sr_core_top</code> 完成 end-to-end verification 後的第一個
+        accelerator system architecture refactor。它的核心目標是把大量 weight/M0/M1
+        top-level ports 逐步改成 memory-style architecture，同時保留 <code>RTL/</code>
+        內已通過驗證的 Golden RTL Version。
+      </p>
+    </header>
+
+    <section>
+      <h2>1. Phase 目標</h2>
+      <p>
+        原本 <code>sr_core_top</code> 為了 verification 方便，把 Conv1 weight、Conv3 weight、
+        M0、M1 都攤平成 top-level input ports。這已經證明功能正確，但不適合 accelerator architecture。
+      </p>
+      <pre>Phase8 goal:
+large top-level parameter ports
+  -> memory-style weight / quant parameter organization</pre>
+      <p>
+        本階段不做 AXI、DMA、BRAM IP、AXI BRAM Controller、PS-PL integration。
+        目前只處理 Weight Memory Architecture Refactor。
+      </p>
+    </section>
+
+    <section>
+      <h2>2. 現有問題</h2>
+      <pre>conv1_w000
+conv1_w001
+...
+conv1_w708
+
+conv3_w00
+...
+conv3_w37
+
+conv1_m0_0 ... conv1_m0_7
+conv1_m1_0 ... conv1_m1_7
+
+conv3_m0_0 ... conv3_m0_3
+conv3_m1_0 ... conv3_m1_3</pre>
+      <table>
+        <thead>
+          <tr>
+            <th>項目</th>
+            <th>目前方式</th>
+            <th>問題</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Conv1 Weight Interface</td>
+            <td>72 個 signed int8 input ports</td>
+            <td>Top-level port 過多，不利於封裝 IP，也不利於 BRAM/ROM 化。</td>
+          </tr>
+          <tr>
+            <td>Conv3 Weight Interface</td>
+            <td>32 個 signed int8 input ports</td>
+            <td>Conv3 是 1x1 kernel，但目前仍然被攤平成大量 port。</td>
+          </tr>
+          <tr>
+            <td>M0/M1 Interface</td>
+            <td>每個 output channel 一組 port</td>
+            <td>未來若增加 layer 或 channel，port 數會快速膨脹。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>3. 為什麼不能維持舊架構</h2>
+      <pre>1. Top-level port 太多
+2. 不容易包成 Vivado custom IP
+3. 不容易替換成 BRAM / ROM
+4. 不容易建立 AXI weight loading path
+5. 不容易支援未來更大模型或更多 channel
+6. 不容易把 weight storage 和 compute datapath 分開</pre>
+      <div class="warn">
+        <p>
+          舊架構適合 verification，但不適合 deployment-oriented accelerator。
+          Phase8 必須開始建立 memory boundary，否則後面的 BRAM/AXI/DMA 會很難接。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>4. 新架構設計理念</h2>
+      <p>
+        Weight 和 quant parameter 是 model constant，應該像 memory 一樣被讀取，
+        不應該全部變成 top-level wires。
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>方案</th>
+            <th>優點</th>
+            <th>缺點</th>
+            <th>採用</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>維持大量 input port</td>
+            <td>最容易接現有 TB</td>
+            <td>不適合 IP / BRAM / AXI / deployment</td>
+            <td>否</td>
+          </tr>
+          <tr>
+            <td>直接上 Vivado BRAM IP</td>
+            <td>接近 deployment</td>
+            <td>太早引入 latency、XCI、初始化格式問題</td>
+            <td>否</td>
+          </tr>
+          <tr>
+            <td>先做 Verilog memory bank / wrapper</td>
+            <td>可讀、可驗證、未來可替換 BRAM</td>
+            <td>還不是 deployment version</td>
+            <td>是</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>5. RTL 修改內容</h2>
+      <p>本階段不修改：</p>
+      <pre>model_lite/sr_core/RTL</pre>
+      <p>本階段新增於：</p>
+      <pre>model_lite/sr_core/RTL_sys/phase8_weight_memory/</pre>
+      <table>
+        <thead>
+          <tr>
+            <th>檔案</th>
+            <th>用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>sr_weight_memory_arch_proposal.v</code></td>
+            <td>Conv1/Conv3 weight 與 M0/M1 memory organization proposal。</td>
+          </tr>
+          <tr>
+            <td><code>tb_sr_weight_memory_arch_proposal.v</code></td>
+            <td>Phase8.1 memory mapping self-check。</td>
+          </tr>
+          <tr>
+            <td><code>sr_core_top_mem_wrapper.v</code></td>
+            <td>Phase8.2 memory-oriented wrapper。</td>
+          </tr>
+          <tr>
+            <td><code>tb_sr_core_top_mem_wrapper.v</code></td>
+            <td>Phase8.2 end-to-end wrapper verification。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>6. Weight Memory Concept</h2>
+      <pre>舊：
+conv1_w000, conv1_w001, ..., conv1_w708
+
+新：
+reg signed [7:0] conv1_weight_mem [0:71]</pre>
+      <pre>舊：
+conv3_w00, conv3_w01, ..., conv3_w37
+
+新：
+reg signed [7:0] conv3_weight_mem [0:31]</pre>
+      <p>
+        這種 memory-style organization 讓後續 BRAM/ROM/AXI migration 有明確的 address/data boundary。
+      </p>
+    </section>
+
+    <section>
+      <h2>7. Conv1 Memory Mapping</h2>
+      <p>Conv1 weight shape 為 <code>[8][3][3][1]</code>，因為 Cin=1，所以每個 output channel 有 9 個 kernel tap。</p>
+      <pre>co0: addr  0.. 8
+co1: addr  9..17
+co2: addr 18..26
+co3: addr 27..35
+co4: addr 36..44
+co5: addr 45..53
+co6: addr 54..62
+co7: addr 63..71</pre>
+      <pre>addr = output_channel * 9 + kernel_tap</pre>
+    </section>
+
+    <section>
+      <h2>8. Conv3 Memory Mapping</h2>
+      <p>Conv3 是 layer 名稱，kernel 是 1x1。Conv3 weight shape 為 <code>[4][1][1][8]</code>。</p>
+      <pre>co0: addr  0.. 7
+co1: addr  8..15
+co2: addr 16..23
+co3: addr 24..31</pre>
+      <pre>addr = output_channel * 8 + input_channel</pre>
+    </section>
+
+    <section>
+      <h2>9. M0/M1 Memory Mapping</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Layer</th>
+            <th>M0 count</th>
+            <th>M1 count</th>
+            <th>Mapping</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Conv1</td>
+            <td>8</td>
+            <td>8</td>
+            <td><code>conv1_m0_mem[co]</code>, <code>conv1_m1_mem[co]</code></td>
+          </tr>
+          <tr>
+            <td>Conv3</td>
+            <td>4</td>
+            <td>4</td>
+            <td><code>conv3_m0_mem[co]</code>, <code>conv3_m1_mem[co]</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>10. 驗證策略</h2>
+      <p>Phase8 的重點不是重新證明 MAC、requant、PixelShuffle 這些運算正確，因為那些已經在 <code>RTL/</code> 內完成 golden verification。Phase8 要驗證的是：把大量 top-level weight/M0/M1 port 改成 memory-style organization 之後，資料 mapping 沒有錯，而且整個 end-to-end 行為仍然和原本 PASS 版本一致。</p>
+      <p>因此 Phase8 分成兩層驗證。第一層先只看 memory 本身，第二層才把 memory 接回 top wrapper 做完整輸出比對。這樣如果未來出錯，可以很快知道問題是在「memory mapping」還是「wrapper 接線 / 系統整合」。</p>
+      <table>
+        <thead>
+          <tr>
+            <th>階段</th>
+            <th>目的</th>
+            <th>重點說明</th>
+            <th>使用檔案 / PASS 意義</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Phase8.1</td>
+            <td>Weight Memory Self-Check</td>
+            <td>只驗證 memory-style organization 的 mapping 與 readback，不接 <code>sr_core_top</code>。這一層要確認 <code>conv1_weight_mem[0:71]</code>、<code>conv3_weight_mem[0:31]</code>、<code>conv1_m0/m1</code>、<code>conv3_m0/m1</code> 的 address 對應完全正確。這一步很重要，因為只要 weight channel 順序、kernel tap 順序、M0/M1 output channel 對應錯一格，後面 end-to-end 可能只看到 output mismatch，很難立即定位。</td>
+            <td><code>generated/conv1_weight.mem</code>, <code>generated/conv3_weight.mem</code>, <code>generated/conv1_m0.mem</code>, <code>generated/conv1_m1.mem</code>, <code>generated/conv3_m0.mem</code>, <code>generated/conv3_m1.mem</code><br>PASS 代表：generated 參數載入 memory 後，逐地址讀回完全一致，memory mapping 本身可信。</td>
+          </tr>
+          <tr>
+            <td>Phase8.2</td>
+            <td>Memory-Oriented Top Wrapper</td>
+            <td>在不修改 <code>RTL/</code> verified modules 的前提下，建立 <code>sr_core_top_mem_wrapper</code>。Wrapper 內部持有 weight/M0/M1 memory，再把 memory entry 展開接到原本 verified top 的 ports。這一層驗證的是：新的 memory-oriented architecture 是否能保持原本 end-to-end 行為，也就是 refactor 沒有破壞 golden result。</td>
+            <td><code>generated/golden/input_int8_for_core.mem</code>, <code>generated/golden/output_uint8.mem</code>，並保留 <code>feature_mem0_dump.txt</code>, <code>feature_mem1_dump.txt</code>, <code>feature_mem2_dump.txt</code><br>PASS 代表：從 input_int8 經 Conv1、Conv3、PixelShuffle、OutputStage 到 output_uint8，最終結果仍然 bit-exact match golden。</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>這個兩層驗證策略的好處是保留 debug 階層：Phase8.1 先保證參數 memory 沒有放錯；Phase8.2 再保證 wrapper 接回 verified pipeline 後輸出不變。未來若要換成 BRAM IP、AXI loader 或 DMA loading，也應該維持同樣節奏：先 readback 自檢，再 end-to-end golden compare。</p>
+    </section>
+
+    <section>
+      <h2>11. 使用檔案</h2>
+      <pre>generated/conv1_weight.mem
+generated/conv3_weight.mem
+generated/conv1_m0.mem
+generated/conv1_m1.mem
+generated/conv3_m0.mem
+generated/conv3_m1.mem
+generated/golden/input_int8_for_core.mem
+generated/golden/output_uint8.mem</pre>
+    </section>
+
+    <section>
+      <h2>12. PASS 條件</h2>
+      <pre>mismatch count = 0
+max abs diff   = 0
+PASS</pre>
+    </section>
+
+    <section>
+      <h2>13. 遇到的問題</h2>
+      <pre>1. Top-level port 過多
+2. Weight interface 不合理
+3. M0/M1 interface 不利於擴充
+4. Verification top 和 deployment architecture 邊界混在一起
+5. 若直接導入 BRAM/AXI，debug 複雜度會太早上升</pre>
+    </section>
+
+    <section>
+      <h2>14. BRAM Migration Plan</h2>
+      <pre>Verilog reg memory proposal
+  -> explicit sync ROM/RAM interface
+  -> Vivado Block Memory Generator
+  -> COE/MEM initialization
+  -> synthesis/deployment integration</pre>
+    </section>
+
+    <section>
+      <h2>15. AXI Migration Plan</h2>
+      <pre>AXI-Lite option:
+  PS writes weight/parameter register or small memory window
+
+AXI DMA option:
+  PS transfers weight blob to BRAM before inference
+
+Fixed ROM option:
+  weights are fixed at bitstream generation time</pre>
+      <p>
+        對目前 fixed QAT model 而言，最簡單的 deployment path 可能是 fixed ROM。
+        如果未來要支援 runtime weight update，再考慮 AXI loading。
+      </p>
+    </section>
+
+    <section>
+      <h2>16. Phase8 結論</h2>
+      <pre>1. RTL/ 保留為 Golden RTL Version
+2. RTL_sys/phase8_weight_memory/ 建立 architecture refactor 工作區
+3. Conv1 / Conv3 / M0 / M1 memory mapping 已定義
+4. Phase8.1 memory mapping self-check PASS
+5. Phase8.2 memory-oriented wrapper end-to-end PASS
+6. Phase8.3 Vivado parameter ROM prototype 已建立</pre>
+      <p>
+        目前新增 Phase8.4a：ROM Timing Analysis。這一步先分析 BMG ROM 的 1-cycle latency，
+        確認 wrapper integration 前需要的 timing 概念。
+      </p>
+    </section>
+
+    <section>
+      <h2>17. 下一階段規劃</h2>
+      <p>
+        下一步可以繼續 Phase8.4，把 parameter ROM bank 接回 memory-oriented top wrapper，
+        並處理 synchronous ROM read latency、address scheduling、valid timing。
+        Phase9 才開始 Streaming Architecture Refactor。
+      </p>
+    </section>
+
+    <section>
+      <h2>18. Phase8.1 Weight Memory Self-Check</h2>
+      <p>
+        本章保留 Phase8.1 在 Phase8 完整紀錄中的位置。
+        詳細說明已獨立整理到：
+        <a href="phase8_1_memory_mapping_selfcheck.html">phase8_1_memory_mapping_selfcheck.html</a>
+      </p>
+      <div class="decision">
+        <pre>conv1_weight mismatch count = 0
+conv3_weight mismatch count = 0
+conv1_m0 mismatch count     = 0
+conv1_m1 mismatch count     = 0
+conv3_m0 mismatch count     = 0
+conv3_m1 mismatch count     = 0
+total mismatch count        = 0
+PASS</pre>
+      </div>
+    </section>
+
+    <section>
+      <h2>19. Phase8.2 Memory-Oriented Top Wrapper</h2>
+      <p>
+        本章保留 Phase8.2 在 Phase8 完整紀錄中的位置。
+        詳細說明已獨立整理到：
+        <a href="phase8_2_memory_oriented_wrapper.html">phase8_2_memory_oriented_wrapper.html</a>
+      </p>
+      <div class="decision">
+        <pre>Phase8.2 sr_core_top_mem_wrapper verification result
+mismatch count = 0
+max abs diff   = 0
+PASS</pre>
+      </div>
+    </section>
+
+    <section>
+      <h2>20. Phase8.3 Vivado BRAM Parameter Architecture</h2>
+      <p>
+        本章保留 Phase8.3 在 Phase8 完整紀錄中的位置。
+        詳細說明已獨立整理到：
+        <a href="phase8_3_vivado_bram.html">phase8_3_vivado_bram.html</a>
+        與 GUI 操作紀錄：
+        <a href="phase8_3_vivado_bram_gui.html">phase8_3_vivado_bram_gui.html</a>
+      </p>
+      <div class="decision">
+        <pre>Phase8.3 Parameter ROM Bank Self-Check Result
+conv1_weight mismatch count = 0
+conv3_weight mismatch count = 0
+conv1_m0 mismatch count = 0
+conv1_m1 mismatch count = 0
+conv3_m0 mismatch count = 0
+conv3_m1 mismatch count = 0
+total mismatch count = 0
+PASS</pre>
+      </div>
+      <p>
+        Phase8.3 已建立 Vivado project <code>sr_core_bram_pynqz2</code>，
+        並產生六個 Block Memory Generator ROM IP：Conv1/Conv3 weight 與 Conv1/Conv3 M0/M1。
+        這代表 Phase8 已從 reg memory organization 進一步推進到 Vivado ROM IP prototype。
+      </p>
+    </section>
+
+    <section>
+      <h2>21. Phase8.4a ROM Timing Analysis</h2>
+      <p>
+        本章保留 Phase8.4a 在 Phase8 完整紀錄中的位置。
+        詳細說明已獨立整理到：
+        <a href="phase8_4a_rom_timing_analysis.html">phase8_4a_rom_timing_analysis.html</a>
+      </p>
+      <div class="decision">
+        <p>
+          Phase8.4a 的重點是確認：BMG ROM 不是 same-cycle behavioral memory。
+          Address / enable 在 cycle N 送出，data 會在 cycle N+1 有效。
+          因此 Phase8.4b 的 ROM-backed wrapper 必須先處理 preload 或 wait timing，
+          不能直接把 ROM data 當成同拍可用。
+        </p>
+      </div>
+      <pre>Phase8.4a status:
+ROM Timing Analysis PASS
+
+Next:
+Phase8.4b ROM Preload Wrapper Integration</pre>
+    </section>
+
+    <section>
+      <h2>22. Phase8.4b ROM Preload Wrapper</h2>
+      <p>
+        本章保留 Phase8.4b 在 Phase8 完整紀錄中的位置。
+        詳細說明已獨立整理到：
+        <a href="phase8_4b_rom_preload_wrapper.html">phase8_4b_rom_preload_wrapper.html</a>
+      </p>
+      <p>
+        Phase8.4b 的重點是把 Vivado ROM IP 接入 wrapper，但不讓已 verified 的 Conv1、Conv3、
+        PixelShuffle、OutputStage 直接承擔 ROM latency。新的 wrapper 先用 preload FSM 把 ROM
+        內容搬到 parameter register bank，等 <code>preload_done</code> 後才允許 core 開始。
+      </p>
+      <div class="decision">
+        <pre>Phase8.4b sr_core_top_rom_preload_wrapper verification result
+preload_done asserted
+mismatch count = 0
+max abs diff   = 0
+PASS</pre>
+      </div>
+      <p>
+        這一步證明：
+        <code>Vivado ROM IP -> preload FSM -> parameter register bank -> verified RTL -> output_uint8.mem</code>
+        的完整路徑與 Phase8.2 memory-oriented wrapper 行為一致。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase6 Output Stage</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>Phase6 Output Stage</h1>
+      <p class="small">位置：<code>model_lite/sr_core/html/phase6_output_stage.html</code></p>
+      <p class="small">回到主頁：<a href="index.html">SR Core 專案首頁</a></p>
+      <p class="small">回到 RTL 進度：<a href="rtl/index.html">rtl/index.html</a></p>
+      <p>
+        本頁記錄 final output formatting stage：
+        signed int8 → output clip → uint8 image domain。
+      </p>
+    </header>
+
+    <section>
+      <h2>1. 為什麼 PixelShuffle Output 還是 Signed Int8</h2>
+      <p>
+        前面 Conv1、Conv3、PixelShuffle 都還在 quantized tensor domain。
+        PixelShuffle 只重新排列位置，不改變數值格式，因此
+        <code>pixel_shuffle_out_int8.mem</code> 仍然是 signed int8。
+      </p>
+    </section>
+
+    <section>
+      <h2>2. 為什麼需要 Output Clip</h2>
+      <p>
+        TFLite graph 在 final output quantize 前有 output range constraint。
+        硬體上先把數值限制在 signed int8 有效範圍：
+      </p>
+      <div class="decision">
+        <pre>[-128, 127]</pre>
+      </div>
+
+      <p>
+        目前 input 已經是 signed int8，所以 clip 通常是 passthrough；
+        但保留明確 clamp datapath 可以讓 final stage 的 range constraint 很清楚。
+      </p>
+    </section>
+
+    <section>
+      <h2>3. 為什麼需要 Int8 到 Uint8 Conversion</h2>
+      <p>
+        SR core 內部使用 signed int8 quantized tensor。
+        但最終影像輸出 <code>output_uint8.mem</code> 是 uint8 image domain，
+        範圍是：
+      </p>
+      <pre>[0, 255]</pre>
+
+      <p>
+        因此最後一步要做 zero-point recovery。
+      </p>
+    </section>
+
+    <section>
+      <h2>4. Zero Point = -128 的意義</h2>
+      <p>
+        目前 signed int8 tensor 的 zero point 是 <code>-128</code>。
+        要轉回 uint8 image domain，就把 signed int8 值平移 128：
+      </p>
+      <div class="decision">
+        <pre>output_uint8 = clipped_int8 + 128</pre>
+      </div>
+
+      <pre>-128 -> 0
+0    -> 128
+127  -> 255</pre>
+    </section>
+
+    <section>
+      <h2>5. Pipeline 位置</h2>
+      <pre>Conv1 block
+  -> Conv3 block
+  -> PixelShuffle
+  -> Output Clip
+  -> int8 to uint8 conversion
+  -> output_uint8</pre>
+
+      <p>
+        這不是一般 CNN layer，而是 final output formatting stage。
+      </p>
+    </section>
+
+    <section>
+      <h2>6. Golden Verification</h2>
+      <p>Testbench 直接使用完整 golden：</p>
+      <pre>generated/golden/pixel_shuffle_out_int8.mem
+  -> sr_output_stage
+  -> compare generated/golden/output_uint8.mem</pre>
+
+      <p>若 mismatch，會印出：</p>
+      <pre>pixel index
+input int8
+clipped value
+RTL uint8 output
+golden uint8 output</pre>
+    </section>
+
+    <section>
+      <h2>7. PASS 條件</h2>
+      <div class="decision">
+        <pre>mismatch count = 0
+max abs diff   = 0</pre>
+      </div>
+    </section>
+
+    <section>
+      <h2>8. 目前狀態</h2>
+      <p>
+        完成 Phase6 後，Conv1 → Conv3 → PixelShuffle → Output Stage
+        已經接近完整 SR accelerator 的 pure RTL compute path。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

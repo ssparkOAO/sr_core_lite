@@ -1,0 +1,12 @@
+
+==============================================
+Phase8.3 Parameter ROM Bank Self-Check Result
+==============================================
+conv1_weight mismatch count = 0
+conv3_weight mismatch count = 0
+conv1_m0 mismatch count = 0
+conv1_m1 mismatch count = 0
+conv3_m0 mismatch count = 0
+conv3_m1 mismatch count = 0
+total mismatch count = 0
+PASS

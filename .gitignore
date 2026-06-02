@@ -1,0 +1,40 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Vivado and xsim generated files
+*.jou
+*.log
+*.pb
+*.wdb
+*.xmsgs
+*.str
+*.backup.*
+*.exe
+*.dbg
+*.xdbg
+*.sdb
+*.rlx
+xsim.dir/
+**/xsim.dir/
+
+# Vivado project generated directories
+vivado/**/*.cache/
+vivado/**/*.gen/
+vivado/**/*.hw/
+vivado/**/*.ip_user_files/
+vivado/**/*.runs/
+vivado/**/*.sim/
+
+# Local runtime dumps and large intermediate arrays
+generated/runtime_dump/
+generated/**/*.npy
+
+# Manual local backups; Git history replaces these for normal backup.
+backup/
+
+# OS/editor noise
+Thumbs.db
+Desktop.ini
+.DS_Store
+.vscode/

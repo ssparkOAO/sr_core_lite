@@ -1,0 +1,8 @@
+Phase8.2 sr_core_top_mem_wrapper verification result
+==================================================
+Purpose : memory-oriented wrapper around verified sr_core_top
+Golden  : output_uint8.mem
+
+mismatch count = 0
+max abs diff   = 0
+PASS

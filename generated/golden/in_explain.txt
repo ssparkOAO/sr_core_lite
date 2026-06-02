@@ -1,0 +1,7 @@
+input_uint8 (unsigned)
+    ↓
+QUANTIZE
+    ↓
+input_int8_for_core (signed)
+    ↓
+Conv1

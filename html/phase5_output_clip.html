@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase5 Output Clip</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>Phase5 Output Clip</h1>
+      <p class="small">位置：<code>model_lite/sr_core/html/phase5_output_clip.html</code></p>
+      <p class="small">回到主頁：<a href="index.html">SR Core 專案首頁</a></p>
+      <p class="small">回到 RTL 進度：<a href="rtl/index.html">rtl/index.html</a></p>
+      <p>
+        本頁記錄 PixelShuffle 後的 output clip block。
+        這不是一般 CNN activation layer，而是 final output quantize 前的 range constraint。
+      </p>
+    </header>
+
+    <section>
+      <h2>1. 為什麼不是一般 ReLU Layer</h2>
+      <p>
+        TFLite graph 在 PixelShuffle 後面有 <code>MINIMUM</code> 和 <code>RELU</code>。
+        這裡的硬體行為不是新的 convolution activation stage，而是要把 final output quantize
+        前的數值限制在有效範圍內。
+      </p>
+
+      <div class="warn">
+        <p>
+          因此本階段稱為 <strong>output clip block</strong>，
+          不稱為 standalone ReLU layer。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. TFLite MINIMUM + RELU 的意義</h2>
+      <pre>PixelShuffle output
+  -> MINIMUM(x, 127)
+  -> RELU
+  -> final quantize
+  -> uint8 output</pre>
+
+      <p>
+        依照硬體摘要，這一段的 action 是：
+      </p>
+      <pre>clip output to valid int8 range before final output quantize</pre>
+    </section>
+
+    <section>
+      <h2>3. Signed Int8 Domain</h2>
+      <p>目前 tensor domain 是 signed int8，因此有效範圍是：</p>
+      <div class="decision">
+        <pre>[-128, 127]</pre>
+      </div>
+
+      <p>Output clip 行為：</p>
+      <pre>if input > 127:
+    output = 127
+else if input < -128:
+    output = -128
+else:
+    output = input</pre>
+    </section>
+
+    <section>
+      <h2>4. 為什麼 Input 用較寬位元</h2>
+      <p>
+        如果 RTL input port 寫成 <code>signed [7:0]</code>，那 <code>200</code>
+        和 <code>-200</code> 不能被正確表示，進入 module 前就會 wrap。
+        例如 8-bit signed 無法表示 <code>200</code>。
+      </p>
+
+      <p>
+        因此本 block 使用較寬的 signed input 來代表「需要被 clip 的數值」，
+        output 則固定是 signed int8：
+      </p>
+      <pre>input  signed [15:0] in_pixel
+output signed [7:0]  out_pixel</pre>
+
+      <p>
+        若前一級已經保證輸出是 signed int8，這個 block 會等同 passthrough。
+        但用較寬 input 可以正確驗證 overflow / underflow clamp 行為。
+      </p>
+    </section>
+
+    <section>
+      <h2>5. 為什麼不需要 Multiplier</h2>
+      <p>
+        Output clip 只是 range limiting，不做 MAC、不做 multiplier、不做 requant、
+        不做 line buffer、不做 BRAM、不做 state machine。
+      </p>
+      <pre>compare
+  -> mux select clamp value or original value</pre>
+    </section>
+
+    <section>
+      <h2>6. Pipeline 位置</h2>
+      <pre>Conv1
+  -> Conv3
+  -> PixelShuffle
+  -> Output Clip
+  -> final uint8 conversion</pre>
+
+      <p>
+        完成這個 block 後，下一步才會做 final uint8 format conversion。
+      </p>
+    </section>
+
+    <section>
+      <h2>7. Testbench</h2>
+      <p>Testbench 驗證正常範圍、overflow、underflow：</p>
+      <pre>-128 -> -128
+-64  -> -64
+0    -> 0
+64   -> 64
+127  -> 127
+200  -> 127
+-200 -> -128</pre>
+
+      <p>每筆會印出：</p>
+      <pre>input
+output
+expected</pre>
+    </section>
+
+    <section>
+      <h2>8. PASS 條件</h2>
+      <div class="decision">
+        <pre>mismatch count = 0</pre>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

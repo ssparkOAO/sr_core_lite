@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Runtime-Verified Golden Flow 紀錄</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>Runtime-Verified Golden Flow 紀錄</h1>
+      <p class="small">主題：將 SR TFLite deployment flow 改成以 TFLite runtime 為最終 golden 的雙路徑驗證流程</p>
+      <p class="small">回到：<a href="index.html">SR Core 最小功能設計紀錄</a></p>
+    </header>
+
+    <section>
+      <h2>1. 為什麼要做這件事</h2>
+      <p>
+        原本的 <code>sr_core_golden.py</code> 只走 NumPy reconstructed path，也就是用我們自己重建的 int8 pipeline
+        去推估每一層結果：
+      </p>
+      <pre>input
+  → Conv1
+  → requant + ReLU
+  → Conv3
+  → requant
+  → PixelShuffle
+  → uint8 output</pre>
+      <p>
+        這條路非常適合 RTL 設計，因為它直接對應 <code>M0/M1</code>、window、MAC、requantization、
+        PixelShuffle 這些硬體 block。
+      </p>
+      <p>
+        但問題是：<strong>它不一定和真正的 TFLite runtime bit-exact</strong>。
+        只要 rounding、saturation、zero point 修正、tensor dtype 或 intermediate tensor 選取有一點差異，
+        reconstructed 結果就可能和真實 runtime 不同。
+      </p>
+      <div class="decision">
+        <p>
+          因此我們把 golden flow 升級成：
+          <strong>TFLite runtime 才是最終 golden，NumPy reconstructed path 則是 RTL-oriented reference。</strong>
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. 現在的雙路徑設計</h2>
+      <p>
+        新增了 <code>--verify-with-tflite</code> 之後，<code>sr_core_golden.py</code> 會同時建立兩條路徑。
+      </p>
+
+      <h3>2.1 PATH A：Reconstructed Path</h3>
+      <pre>input_uint8
+  → input_int8_for_core
+  → Conv1 3x3
+  → requant + ReLU
+  → Conv3 1x1
+  → requant
+  → PixelShuffle
+  → final uint8 output</pre>
+      <p>
+        這條路徑仍然保留，因為它是後續 RTL testbench 的主要對照來源。
+      </p>
+
+      <h3>2.2 PATH B：TFLite Runtime Path</h3>
+      <pre>tf.lite.Interpreter(
+    model_path=...,
+    experimental_preserve_all_tensors=True
+)
+
+set_tensor(input)
+invoke()
+get_tensor(tensor_index)</pre>
+      <p>
+        這條路徑直接從真正的 TFLite runtime 抓 intermediate tensor。
+        它不是硬體友善表示法，但它才是我們最終要對齊的軟體真值。
+      </p>
+    </section>
+
+    <section>
+      <h2>3. 這次比對哪些 Tensor</h2>
+      <p>
+        為了讓 SR core 的每一段都能逐步對齊，這次固定比對以下四個節點：
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>名稱</th>
+            <th>TFLite tensor index</th>
+            <th>意義</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>conv1_output</code></td>
+            <td><code>5</code></td>
+            <td>Conv1 requant + ReLU 後的 int8 feature map。</td>
+          </tr>
+          <tr>
+            <td><code>conv3_output</code></td>
+            <td><code>8</code></td>
+            <td>Conv3 requant 後、PixelShuffle 前的 int8 sub-pixel tensor。</td>
+          </tr>
+          <tr>
+            <td><code>pixel_shuffle_output</code></td>
+            <td><code>9</code></td>
+            <td>Depth-to-Space / PixelShuffle 之後的 int8 HR tensor。</td>
+          </tr>
+          <tr>
+            <td><code>final_output</code></td>
+            <td><code>12</code></td>
+            <td>模型最終 uint8 output。</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        這四個節點剛好對應你接下來會在 PL 裡逐步完成的 pipeline。
+      </p>
+    </section>
+
+    <section>
+      <h2>4. 每個 Tensor 會輸出什麼資訊</h2>
+      <p>
+        啟用 <code>--verify-with-tflite</code> 時，程式會對每個 tensor 輸出：
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>欄位</th>
+            <th>用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>shape</code></td>
+            <td>確認 runtime 與 reconstructed 的張量尺寸是否一致。</td>
+          </tr>
+          <tr>
+            <td><code>dtype</code></td>
+            <td>確認 int8 / uint8 型別沒有搞錯。</td>
+          </tr>
+          <tr>
+            <td><code>exact match</code></td>
+            <td>判斷是否 bit-exact 完全一致。</td>
+          </tr>
+          <tr>
+            <td><code>max abs diff</code></td>
+            <td>找出最大誤差幅度。</td>
+          </tr>
+          <tr>
+            <td><code>mismatch count</code></td>
+            <td>計算總共有多少 element 不一致。</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        這樣的目的不是只看最後 output，而是讓我們能快速定位「差異是從哪一層開始出現的」。
+      </p>
+    </section>
+
+    <section>
+      <h2>5. Runtime Dump 輸出目的</h2>
+      <p>
+        除了 terminal summary，程式也會輸出實際 tensor dump 到：
+      </p>
+      <pre>model_lite/sr_core/generated/runtime_dump</pre>
+      <p>
+        每個節點都會產生：
+      </p>
+      <pre>*_runtime.npy
+*_reconstructed.npy
+*_diff.npy</pre>
+      <p>
+        這樣做的目的有三個：
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>目的</th>
+            <th>說明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>離線分析</td>
+            <td>可以用 Python / NumPy / Jupyter 直接觀察 mismatch 分布。</td>
+          </tr>
+          <tr>
+            <td>RTL debug</td>
+            <td>未來 PL 端輸出若錯，可以對照 reconstructed 與 runtime 看差異從哪裡開始。</td>
+          </tr>
+          <tr>
+            <td>流程固定化</td>
+            <td>建立 stable golden pipeline，之後每改 RTL 或 extractor 都能重新驗證。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>6. 這次修改後的使用方式</h2>
+      <p>
+        一般只產生 reconstructed golden：
+      </p>
+      <pre>python model_lite\sr_core\tools\sr_core_golden.py --height 8 --width 8 --seed 1</pre>
+      <p>
+        若要同時做 runtime verification：
+      </p>
+      <pre>conda run -n tf_sr python model_lite\sr_core\tools\sr_core_golden.py ^
+  --height 8 --width 8 --seed 1 ^
+  --verify-with-tflite</pre>
+      <p>
+        這裡建議用 <code>tf_sr</code> 環境執行，因為 runtime 驗證需要 TensorFlow。
+      </p>
+    </section>
+
+    <section>
+      <h2>7. 這次實際驗證結果</h2>
+      <p>
+        以目前測試條件：
+      </p>
+      <pre>height = 8
+width  = 8
+seed   = 1
+tflite = model_lite/sr_core/tools/Bilinear_PP_v5_test_qat.tflite</pre>
+      <p>
+        已實際跑過 runtime verification，結果如下：
+      </p>
+      <pre>conv1_output:
+  exact match = True
+  max abs diff = 0
+  mismatch count = 0
+
+conv3_output:
+  exact match = True
+  max abs diff = 0
+  mismatch count = 0
+
+pixel_shuffle_output:
+  exact match = True
+  max abs diff = 0
+  mismatch count = 0
+
+final_output:
+  exact match = True
+  max abs diff = 0
+  mismatch count = 0</pre>
+      <p>
+        這表示目前的 NumPy reconstructed path，至少在這組測試條件下，已經和真正 TFLite runtime bit-exact。
+      </p>
+    </section>
+
+    <section>
+      <h2>8. 做這個的真正目的</h2>
+      <div class="decision">
+        <p>
+          做這件事不是為了讓 Python 看起來更完整，而是為了讓後續 RTL 開發有一個
+          <strong>可追蹤、可定位、可逐層驗證</strong> 的 golden flow。
+        </p>
+      </div>
+      <p>
+        具體來說，目的有四個：
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>目的</th>
+            <th>意義</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>確認 reconstructed model 是否可信</td>
+            <td>避免用錯誤的 Python reference 去帶 RTL 開發。</td>
+          </tr>
+          <tr>
+            <td>把 TFLite runtime 定位成最終 golden</td>
+            <td>之後若 reconstructed 與 runtime 有差，應以 runtime 為準。</td>
+          </tr>
+          <tr>
+            <td>支援逐層 debug</td>
+            <td>不是只看 final output，而是能看 conv1 / conv3 / pixel shuffle 哪一層開始偏掉。</td>
+          </tr>
+          <tr>
+            <td>降低 RTL 驗證風險</td>
+            <td>當 PL 輸出有誤時，可以先和 reconstructed 比，再和 runtime 比，更快定位錯誤源頭。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>9. 對下一步 RTL 的幫助</h2>
+      <p>
+        現在我們有三種層次的對照資料：
+      </p>
+      <pre>Level 1: TFLite runtime tensor
+Level 2: NumPy reconstructed tensor
+Level 3: 未來 RTL / simulation tensor</pre>
+      <p>
+        接下來寫 RTL 時，可以用這種方式排錯：
+      </p>
+      <pre>RTL vs reconstructed 一致
+  → 表示硬體與我們的 RTL-oriented 公式一致
+
+reconstructed vs runtime 一致
+  → 表示這套公式與 TFLite runtime 一致
+
+所以 RTL vs runtime 也就可信</pre>
+      <p>
+        這就是把 deployment flow 改成 runtime-verified golden flow 的最大價值。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

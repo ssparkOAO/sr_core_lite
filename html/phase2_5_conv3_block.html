@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase2.5 Conv3 1x1 Block</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>Phase2.5 Conv3 1x1 Block</h1>
+      <p class="small">位置：<code>model_lite/sr_core/html/phase2_5_conv3_block.html</code></p>
+      <p class="small">回到主頁：<a href="index.html">SR Core 專案首頁</a></p>
+      <p class="small">回到 RTL 進度：<a href="rtl/index.html">rtl/index.html</a></p>
+      <p>
+        本頁記錄 Conv3 layer 的 small pipeline：
+        <code>sr_conv1x1_cin8_cout4_mac</code> 接上 4 個
+        <code>sr_requantize</code>，形成 <code>sr_conv1x1_cin8_cout4_block</code>。
+      </p>
+    </header>
+
+    <section>
+      <h2>1. Architecture</h2>
+      <div class="warn">
+        <p>
+          命名注意：<code>Conv3</code> 是 layer 名稱，kernel 是 <code>1x1</code>。
+          這一頁做的是 Conv3 的 1x1 MAC + requant，不是 Conv1 的 3x3 kernel。
+        </p>
+      </div>
+
+      <pre>conv1_out_int8
+  -> sr_conv1x1_cin8_cout4_mac
+  -> acc0, acc1, acc2, acc3
+  -> 4x sr_requantize
+  -> conv3_out_int8</pre>
+
+      <p>
+        這個 block 保持 module 分離：MAC 還是 MAC，requant 還是共用的
+        <code>sr_requantize</code>。後面 Conv1 / Conv3 都可以重複使用同一個 requant block。
+      </p>
+    </section>
+
+    <section>
+      <h2>2. Tensor Mapping</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Tensor</th>
+            <th>Shape</th>
+            <th>Flatten mapping</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>conv1_out_int8.mem</code></td>
+            <td><code>(H,W,8)</code></td>
+            <td>NHWC。每個 pixel 連續 8 個 channel：<code>c0~c7</code>。</td>
+          </tr>
+          <tr>
+            <td><code>conv3_weight.mem</code></td>
+            <td><code>[4,1,1,8]</code></td>
+            <td>cout-major。<code>w00~w07</code> 屬於 output channel 0。</td>
+          </tr>
+          <tr>
+            <td><code>conv3_out_int8.mem</code></td>
+            <td><code>(H,W,4)</code></td>
+            <td>NHWC。每個 pixel 連續 4 個 output channel：<code>q0~q3</code>。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>3. Requant Flow</h2>
+      <p>每個 output channel 使用各自的 <code>M0</code> 與 <code>M1</code>：</p>
+      <pre>q0 = sr_requantize(acc0, conv3_m0[0], conv3_m1[0])
+q1 = sr_requantize(acc1, conv3_m0[1], conv3_m1[1])
+q2 = sr_requantize(acc2, conv3_m0[2], conv3_m1[2])
+q3 = sr_requantize(acc3, conv3_m0[3], conv3_m1[3])</pre>
+
+      <p>目前 requant formula：</p>
+      <pre>tmp = acc * M0 + M1
+rounded = tmp >>> 32
+if tmp[31] == 1:
+    rounded = rounded + 1
+q_out = clamp(rounded, -128, 127)</pre>
+    </section>
+
+    <section>
+      <h2>4. Verification Flow</h2>
+      <p>Testbench 每次取一個 pixel 的 8-channel input，送進 block，再比對 4-channel final int8 output。</p>
+
+      <pre>for each pixel:
+    input  = conv1_out_int8[pixel][0..7]
+    weight = conv3_weight[0..3][0..7]
+    M0/M1  = conv3_m0 / conv3_m1
+    rtl    = q0, q1, q2, q3
+    golden = conv3_out_int8[pixel][0..3]</pre>
+
+      <p>若 mismatch，testbench 會印出：</p>
+      <pre>pixel index
+output channel
+RTL value
+golden value</pre>
+    </section>
+
+    <section>
+      <h2>5. Memory Mapping</h2>
+      <p>使用檔案：</p>
+      <pre>generated/golden/conv1_out_int8.mem
+generated/conv3_weight.mem
+generated/conv3_m0.mem
+generated/conv3_m1.mem
+generated/golden/conv3_out_int8.mem</pre>
+
+      <div class="warn">
+        <p>
+          目前這些 <code>.mem</code> 實際內容是 signed decimal text，不是 hex。
+          所以 testbench 使用 <code>$fscanf(..., "%d")</code> 讀取，避免負數讀錯。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>6. RTL Files</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>檔案</th>
+            <th>用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>RTL/sr_conv1x1_cin8_cout4_block/sr_conv1x1_cin8_cout4_block.v</code></td>
+            <td>Conv3 1x1 MAC + 4x requant block。</td>
+          </tr>
+          <tr>
+            <td><code>RTL/sr_conv1x1_cin8_cout4_block/tb_sr_conv1x1_cin8_cout4_block.v</code></td>
+            <td>Self-checking testbench。</td>
+          </tr>
+          <tr>
+            <td><code>RTL/sr_conv1x1_cin8_cout4_block/tb_sr_conv1x1_cin8_cout4_block_result.txt</code></td>
+            <td>Simulation result report。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>7. Verification Result</h2>
+      <div class="decision">
+        <pre>mismatch count = 0
+max abs diff   = 0
+PASS</pre>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,10 @@
+sr_output_stage verification result
+==================================================
+Purpose : signed int8 output clip + uint8 conversion
+Input   : pixel_shuffle_out_int8.mem, shape (16,16,1)
+Golden  : output_uint8.mem, shape (16,16,1)
+Formula : output_uint8 = clipped_int8 + 128
+
+mismatch count = 0
+max abs diff   = 0
+PASS

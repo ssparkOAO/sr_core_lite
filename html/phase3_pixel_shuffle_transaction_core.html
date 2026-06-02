@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase3 PixelShuffle Transaction Core</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>Phase3 PixelShuffle Transaction Core</h1>
+      <p class="small">位置：<code>model_lite/sr_core/html/phase3_pixel_shuffle_transaction_core.html</code></p>
+      <p class="small">回到主頁：<a href="index.html">SR Core 專案首頁</a></p>
+      <p class="small">回到 RTL 進度：<a href="rtl/index.html">rtl/index.html</a></p>
+      <p>
+        本頁記錄 Phase3 的重新定義版本：
+        <code>pixel_shuffle_core</code> 不只是輸出 <code>c0~c3</code>，
+        而是負責 PixelShuffle mapping、HR address generation 和 write transaction generation。
+      </p>
+    </header>
+
+    <section>
+      <h2>1. Architecture Hierarchy</h2>
+      <pre>pixel_shuffle_core
+  -> wr_en / wr_addr / wr_data
+  -> memory subsystem, later BRAM/IP/AXI/DMA</pre>
+
+      <p>
+        目前只做到 transaction level。也就是 core 產生「要寫哪裡、寫什麼」，
+        但不直接放入 Vivado BRAM IP 或 output buffer controller。
+      </p>
+    </section>
+
+    <section>
+      <h2>2. 設計理念</h2>
+      <div class="decision">
+        <p>
+          PixelShuffle semantic 必須存在 RTL。Testbench 不能幫 DUT 做 tensor rearrangement，
+          否則 DUT 其實沒有真正實作 PixelShuffle，只是把 <code>c0~c3</code> 原樣吐出來。
+        </p>
+      </div>
+
+      <p>
+        這一版的 <code>pixel_shuffle_core</code> 負責三件事：
+      </p>
+      <pre>1. PixelShuffle mapping
+2. HR address generation
+3. write request generation</pre>
+
+      <p>
+        Testbench 只模擬外部 activation source 和 memory sink，最後解讀 memory dump
+        與 golden compare。這樣 mismatch 時比較容易分辨是 RTL mapping/address 錯，
+        還是未來 memory subsystem 整合錯。
+      </p>
+    </section>
+
+    <section>
+      <h2>3. PixelShuffle Mapping</h2>
+      <p>輸入 tensor：</p>
+      <pre>conv3_out_int8
+shape = (8,8,4)
+layout = NHWC</pre>
+
+      <p>每個 LR pixel 有 4 個 sub-pixel channel：</p>
+      <pre>[c0,c1,c2,c3]</pre>
+
+      <p>PixelShuffle x2 mapping：</p>
+      <pre>c0 -> HR[2y  ][2x  ]
+c1 -> HR[2y  ][2x+1]
+c2 -> HR[2y+1][2x  ]
+c3 -> HR[2y+1][2x+1]</pre>
+
+      <p>所以：</p>
+      <div class="decision">
+        <pre>(8,8,4) -> (16,16,1)
+8 * 8 * 4 = 16 * 16 = 256</pre>
+      </div>
+    </section>
+
+    <section>
+      <h2>4. Write Transaction Concept</h2>
+      <p>
+        一個 LR pixel 會產生兩個 write transaction：
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Port</th>
+            <th>對應 HR row</th>
+            <th>data packing</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>port A</code></td>
+            <td>even row, <code>2y</code></td>
+            <td><code>wr_data_a = {c1,c0}</code></td>
+          </tr>
+          <tr>
+            <td><code>port B</code></td>
+            <td>odd row, <code>2y+1</code></td>
+            <td><code>wr_data_b = {c3,c2}</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>
+        Packing 規則是：一個 16-bit word 存兩個水平相鄰 HR pixels。
+        高 8-bit 是右邊 pixel，低 8-bit 是左邊 pixel。
+      </p>
+      <pre>wr_data_a = {right_even, left_even} = {c1,c0}
+wr_data_b = {right_odd,  left_odd } = {c3,c2}</pre>
+    </section>
+
+    <section>
+      <h2>5. Address Generation</h2>
+      <p>
+        Core 內部維護 LR coordinate counter：<code>x_cnt</code>、<code>y_cnt</code>。
+        對每個 LR pixel <code>(x,y)</code>：
+      </p>
+      <pre>even row address = (2*y  ) * LR_WIDTH + x
+odd  row address = (2*y+1) * LR_WIDTH + x</pre>
+
+      <p>
+        這裡每個 address 是一個 16-bit packed word，不是一個 single 8-bit pixel。
+        因為 HR width 是 16，但每個 address 存兩個 HR pixels，所以每條 HR row 需要
+        <code>LR_WIDTH = 8</code> 個 address。
+      </p>
+
+      <h3>5.1 為什麼不是乘以 HR_WIDTH</h3>
+      <p>
+        PixelShuffle 後的 HR 影像寬度是 16，但 write transaction 的 memory view
+        不是「一個 address 存一個 8-bit pixel」，而是「一個 address 存兩個水平相鄰的 8-bit pixels」。
+        所以一條 HR row 雖然有 16 個 pixels，但只需要 8 個 16-bit words。
+      </p>
+
+      <pre>HR row pixels:
+  x=0  x=1  x=2  x=3  ...  x=14 x=15
+
+packed address view:
+  addr0 stores HR x=0,1
+  addr1 stores HR x=2,3
+  addr2 stores HR x=4,5
+  ...
+  addr7 stores HR x=14,15</pre>
+
+      <p>
+        因此每一條 HR row 的 address stride 是 <code>HR_WIDTH / 2 = 8</code>，
+        也就是 <code>LR_WIDTH</code>。這就是 RTL 裡
+        <code>HR_LINE_ADDRS = LR_WIDTH</code> 的原因。
+      </p>
+
+      <h3>5.2 一個 LR pixel 對應兩個 memory words</h3>
+      <p>
+        對 LR pixel <code>(x,y)</code>，PixelShuffle 會產生一個 2x2 HR block：
+      </p>
+
+      <pre>HR row 2y:     c0 c1
+HR row 2y+1:   c2 c3</pre>
+
+      <p>
+        這個 2x2 block 會被寫成兩個 packed words：
+      </p>
+
+      <pre>even row word:
+  address = (2*y) * LR_WIDTH + x
+  data    = {c1, c0}
+
+odd row word:
+  address = (2*y + 1) * LR_WIDTH + x
+  data    = {c3, c2}</pre>
+
+      <p>
+        其中 <code>x</code> 是 LR pixel 的 column，不是 HR pixel 的 column。
+        因為每個 LR pixel 展開後剛好佔 HR row 裡的一個 packed word。
+      </p>
+
+      <h3>5.3 小例子</h3>
+      <p>
+        假設目前 LR pixel 是 <code>x=3, y=2</code>：
+      </p>
+
+      <pre>even HR row = 2*y   = 4
+odd  HR row = 2*y+1 = 5
+
+even address = 4 * 8 + 3 = 35
+odd  address = 5 * 8 + 3 = 43</pre>
+
+      <p>
+        寫入後的意義是：
+      </p>
+
+      <pre>fake_mem[35] = {c1, c0}
+  -> HR[4][6] = c0
+  -> HR[4][7] = c1
+
+fake_mem[43] = {c3, c2}
+  -> HR[5][6] = c2
+  -> HR[5][7] = c3</pre>
+
+      <p>
+        注意 HR x 座標會是 <code>2*x</code> 和 <code>2*x+1</code>，
+        但 memory address 只用 <code>x</code>，因為左右兩個 HR pixels 已經被 pack
+        在同一個 16-bit word 裡。
+      </p>
+    </section>
+
+    <section>
+      <h2>6. RTL Interface</h2>
+      <pre>input  wire clk
+input  wire rst
+input  wire in_valid
+
+input signed [7:0] in_c0
+input signed [7:0] in_c1
+input signed [7:0] in_c2
+input signed [7:0] in_c3
+
+output wire                  wr_en_a
+output wire [ADDR_WIDTH-1:0] wr_addr_a
+output wire [15:0]           wr_data_a
+
+output wire                  wr_en_b
+output wire [ADDR_WIDTH-1:0] wr_addr_b
+output wire [15:0]           wr_data_b
+
+output wire frame_done</pre>
+    </section>
+
+    <section>
+      <h2>7. 為什麼 Core 不直接實作 BRAM IP</h2>
+      <p>
+        目前 focus 是 accelerator core correctness，不是 memory subsystem integration。
+        如果現在接上 <code>blk_mem_gen</code> 或 BRAM controller，debug 會混在一起：
+      </p>
+      <pre>PixelShuffle mapping
+HR address generation
+BRAM write behavior
+BRAM read latency
+frame_done/read FSM</pre>
+
+      <p>
+        先做 write transaction core，可以讓未來替換成 BRAM、AXI、DMA 或 output buffer
+        時，核心 mapping 已經是獨立 verified 的。
+      </p>
+    </section>
+
+    <section>
+      <h2>8. 為什麼分成 Even / Odd Row Port</h2>
+      <p>
+        PixelShuffle x2 的輸出不是單純連續往同一條 row 寫。每個 LR pixel
+        會展開成 HR 的 2x2 block，因此同一個 input cycle 同時產生：
+      </p>
+
+      <pre>even HR row:  c0 c1
+odd  HR row:  c2 c3</pre>
+
+      <p>
+        這代表 write address 天然分散到兩條不同的 HR row：
+      </p>
+
+      <pre>wr_addr_a = (2*y  ) * LR_WIDTH + x
+wr_addr_b = (2*y+1) * LR_WIDTH + x</pre>
+
+      <p>
+        如果只用單一 write port，就可能需要先寫 even row，再另外排程寫 odd row，
+        或是加入更多 FSM / buffer 來處理非連續的 row jump。這會讓目前階段的
+        PixelShuffle mapping verification 變得比較混雜。
+      </p>
+
+      <div class="decision">
+        <p>
+          分成 <code>port A</code> 和 <code>port B</code> 的好處是：
+          even row 和 odd row 剛好可以在同一個 cycle 同時發出 write transaction。
+          這很貼近 single dual-port BRAM 的兩個 write ports，
+          或同一個 output buffer 的雙寫入埠硬體實作方式。
+        </p>
+      </div>
+
+      <p>
+        目前 testbench 的 <code>fake_mem</code> 是單一 memory array。
+        <code>wr_en_a/wr_addr_a/wr_data_a</code> 和
+        <code>wr_en_b/wr_addr_b/wr_data_b</code> 共同寫入同一塊 memory，
+        用來模擬 single dual-port BRAM：
+      </p>
+
+      <pre>if (wr_en_a)
+    fake_mem[wr_addr_a] = wr_data_a;
+
+if (wr_en_b)
+    fake_mem[wr_addr_b] = wr_data_b;</pre>
+
+      <p>
+        未來如果接真實 BRAM/IP，可以把這個 single fake memory model
+        替換成 dual-port BRAM 的兩個 write ports。
+        PixelShuffle core 本身的 mapping、packing、address generation 不需要重寫。
+      </p>
+    </section>
+
+    <section>
+      <h2>9. Verification Flow</h2>
+      <p>Testbench 使用：</p>
+      <pre>generated/golden/conv3_out_int8.mem
+generated/golden/pixel_shuffle_out_int8.mem</pre>
+
+      <p>目前 <code>.mem</code> 是 signed decimal text，所以使用：</p>
+      <pre>$fopen + $fscanf("%d")</pre>
+
+      <p>驗證流程：</p>
+      <pre>1. Testbench 逐筆餵入 conv3_out_int8 的 c0~c3
+2. DUT 產生 wr_en / wr_addr / wr_data
+3. Testbench fake memory sink 接收 write transaction
+4. 所有 pixel 完成後，testbench 解讀 fake memory dump
+5. 與 pixel_shuffle_out_int8.mem 做 golden compare</pre>
+    </section>
+
+    <section>
+      <h2>10. Fake Memory Sink</h2>
+      <p>Testbench 模擬 single dual-port memory 被寫入：</p>
+      <pre>if (wr_en_a)
+    fake_mem[wr_addr_a] = wr_data_a;
+
+if (wr_en_b)
+    fake_mem[wr_addr_b] = wr_data_b;</pre>
+
+      <p>
+        注意：這不是 testbench 幫 DUT 做 PixelShuffle。PixelShuffle 的 address 和 packed data
+        已經由 DUT 產生。Testbench 只是像 memory 一樣接收 transaction，
+        最後把 memory dump 解讀成 HR pixels 來 compare golden。
+      </p>
+    </section>
+
+    <section>
+      <h2>11. PASS 條件</h2>
+      <div class="decision">
+        <pre>mismatch count = 0
+max abs diff   = 0</pre>
+      </div>
+
+      <p>若 mismatch，會印出：</p>
+      <pre>HR y
+HR x
+expected
+rtl
+packed word
+address</pre>
+    </section>
+
+    <section>
+      <h2>12. 後續 Integration</h2>
+      <p>
+        後續可以把 fake memory sink 替換成實際 memory subsystem：
+      </p>
+      <pre>pixel_shuffle_core
+  -> BRAM write port
+  -> output buffer
+  -> AXI / DMA / display path</pre>
+
+      <p>
+        那時候要另外處理 BRAM latency、read sequencing、frame_done/read FSM，
+        但 PixelShuffle mapping 本身已經在本階段 verified。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,161 @@
+{
+  "source_tflite": "C:\\M11413047\\codex\\final_proj\\model_lite\\sr_core\\tools\\Bilinear_PP_v5_test_qat.tflite",
+  "model_input": {
+    "tensor_index": 0,
+    "dtype": "UINT8",
+    "shape_signature": [
+      1,
+      -1,
+      -1,
+      1
+    ],
+    "quantization": {
+      "scale": [
+        0.003921568859368563
+      ],
+      "zero_point": [
+        0
+      ],
+      "quantized_dimension": 0
+    }
+  },
+  "model_output": {
+    "tensor_index": 12,
+    "dtype": "UINT8",
+    "shape_signature": [
+      1,
+      -1,
+      -1,
+      1
+    ],
+    "quantization": {
+      "scale": [
+        0.0039223115891218185
+      ],
+      "zero_point": [
+        0
+      ],
+      "quantized_dimension": 0
+    }
+  },
+  "hardware_takeaway": {
+    "pl_core_layers_to_build_now": [
+      "conv1: 3x3 conv + bias + requant + fused ReLU",
+      "conv3: 1x1 conv + bias + requant",
+      "pixel_shuffle: Depth-to-Space scale=2",
+      "output_clip: MINIMUM + RELU can be merged as one output clamp block"
+    ],
+    "layers_not_needed_as_standalone_blocks": [
+      "No separate ReLU block after conv1 because it is fused into conv1.",
+      "Input QUANTIZE and final QUANTIZE are format conversion blocks, not convolution layers."
+    ],
+    "recommended_pl_pipeline": [
+      "input_int8",
+      "conv1 (3x3) + requant + ReLU",
+      "conv3 (1x1) + requant",
+      "pixel shuffle",
+      "output clip",
+      "final uint8 format conversion"
+    ]
+  },
+  "hardware_blocks": [
+    {
+      "stage": 0,
+      "name": "input_quantize",
+      "tflite_ops": [
+        "QUANTIZE"
+      ],
+      "tensor_flow": "tensor 0 -> tensor 4",
+      "hardware_action": "uint8 input to int8 input conversion",
+      "where_to_do": "PS preferred, PL optional",
+      "need_separate_pl_layer": false,
+      "note": "This is input formatting, not a convolution layer."
+    },
+    {
+      "stage": 1,
+      "name": "conv1",
+      "tflite_ops": [
+        "CONV_2D"
+      ],
+      "tensor_flow": "tensor 4 -> tensor 5",
+      "hardware_action": "3x3 conv + bias + requant + ReLU",
+      "where_to_do": "PL core",
+      "need_separate_pl_layer": true,
+      "weight_shape": [
+        8,
+        3,
+        3,
+        1
+      ],
+      "bias_shape": [
+        8
+      ],
+      "fused_activation": "RELU",
+      "need_extra_relu_layer": false,
+      "note": "Conv1 output already includes fused ReLU in TFLite runtime."
+    },
+    {
+      "stage": 2,
+      "name": "conv3",
+      "tflite_ops": [
+        "CONV_2D"
+      ],
+      "tensor_flow": "tensor 5 -> tensor 8",
+      "hardware_action": "1x1 conv + bias + requant",
+      "where_to_do": "PL core",
+      "need_separate_pl_layer": true,
+      "weight_shape": [
+        4,
+        1,
+        1,
+        8
+      ],
+      "bias_shape": [
+        4
+      ],
+      "fused_activation": "NONE",
+      "need_extra_relu_layer": false,
+      "note": "This layer is plain convolution. No fused ReLU after conv3."
+    },
+    {
+      "stage": 3,
+      "name": "pixel_shuffle",
+      "tflite_ops": [
+        "DEPTH_TO_SPACE"
+      ],
+      "tensor_flow": "tensor 8 -> tensor 9",
+      "hardware_action": "scale=2 PixelShuffle / Depth-to-Space",
+      "where_to_do": "PL core",
+      "need_separate_pl_layer": true,
+      "need_mac": false,
+      "note": "Data rearrangement only. No multiplier and no MAC."
+    },
+    {
+      "stage": 4,
+      "name": "output_clip",
+      "tflite_ops": [
+        "MINIMUM",
+        "RELU"
+      ],
+      "tensor_flow": "tensor 9 -> tensor 11",
+      "hardware_action": "clip output to valid int8 range before final output quantize",
+      "where_to_do": "PL preferred",
+      "need_separate_pl_layer": true,
+      "clip_const_tensor": 1,
+      "clip_const_value": 127,
+      "note": "MINIMUM with constant 127 then RELU. This is equivalent to clipped ReLU style output limiting."
+    },
+    {
+      "stage": 5,
+      "name": "output_quantize",
+      "tflite_ops": [
+        "QUANTIZE"
+      ],
+      "tensor_flow": "tensor 11 -> tensor 12",
+      "hardware_action": "int8 output to final uint8 output format conversion",
+      "where_to_do": "PL or PS",
+      "need_separate_pl_layer": false,
+      "note": "This is final output formatting, not a MAC layer."
+    }
+  ]
+}

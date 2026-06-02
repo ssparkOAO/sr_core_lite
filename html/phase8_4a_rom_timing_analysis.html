@@ -1,0 +1,448 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase8.4a ROM Timing Analysis</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>Phase8.4a ROM Timing Analysis</h1>
+      <p class="small">文件位置：<code>model_lite/sr_core/html/phase8_4a_rom_timing_analysis.html</code></p>
+      <p class="small">狀態：Analysis Only，不修改 RTL，不開始 ROM integration。</p>
+      <p>
+        Phase8.4a 的目標是把 Vivado BMG ROM 的 <code>1 clock read latency</code>
+        分析清楚。這一步完成後，下一階段 Phase8.4b 才開始做 ROM-backed wrapper integration。
+      </p>
+    </header>
+
+    <section>
+      <h2>1. Behavioral Memory vs BMG ROM</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Memory 類型</th>
+            <th>讀取直覺</th>
+            <th>Timing</th>
+            <th>對 Wrapper 的影響</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Behavioral Memory</td>
+            <td><code>data = mem[addr]</code></td>
+            <td>常被寫成 same-cycle data</td>
+            <td>Wrapper 可以像查表一樣立刻取參數。</td>
+          </tr>
+          <tr>
+            <td>Vivado BMG ROM</td>
+            <td>address 在 clock edge 被取樣</td>
+            <td>next-cycle data</td>
+            <td>Wrapper 必須等待一拍，不能 address 和 data 同拍使用。</td>
+          </tr>
+        </tbody>
+      </table>
+      <pre>Behavioral Memory:
+cycle N:   addr -> data appears in same cycle
+
+BMG ROM:
+cycle N:   addr/en are sampled
+cycle N+1: data is valid</pre>
+      <p>
+        這個差異會影響 Phase8.4b wrapper：如果直接把 Phase8.2 的 reg memory source 換成 ROM IP，
+        weight / M0 / M1 會晚一拍到，造成 channel mapping 或 parameter mapping 錯位。
+      </p>
+    </section>
+
+    <section>
+      <h2>2. Conv1 Weight Access Timing</h2>
+      <p>
+        <code>conv1_weight_rom</code> 共有 72 筆資料，address width 是 7-bit。
+        mapping 仍然沿用：
+      </p>
+      <pre>addr = output_channel * 9 + kernel_tap
+
+co0 tap0..tap8 -> addr 0..8
+co1 tap0..tap8 -> addr 9..17
+...
+co7 tap0..tap8 -> addr 63..71</pre>
+      <table>
+        <thead>
+          <tr>
+            <th>Cycle</th>
+            <th>conv1_weight_addr</th>
+            <th>conv1_weight_data</th>
+            <th>說明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>0</td>
+            <td>0</td>
+            <td>invalid / old</td>
+            <td>送出第一個 address。</td>
+          </tr>
+          <tr>
+            <td>1</td>
+            <td>1</td>
+            <td>weight[0]</td>
+            <td>收到 addr 0 的資料，同時送 addr 1。</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>2</td>
+            <td>weight[1]</td>
+            <td>收到 addr 1 的資料，同時送 addr 2。</td>
+          </tr>
+          <tr>
+            <td>...</td>
+            <td>...</td>
+            <td>...</td>
+            <td>每 cycle 可送下一個 address，但 data 永遠對應上一拍 address。</td>
+          </tr>
+          <tr>
+            <td>72</td>
+            <td>hold / don't care</td>
+            <td>weight[71]</td>
+            <td>收到最後一筆資料。</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="decision">
+        <p>
+          取得 72 個 Conv1 weight 需要先送 72 個 address，並在最後多等一拍收尾。
+          若從 cycle 0 開始送 addr 0，最後一筆 <code>weight[71]</code> 會在 cycle 72 有效。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>3. Conv3 Weight Access Timing</h2>
+      <p>
+        <code>conv3_weight_rom</code> 共有 32 筆資料，address width 是 5-bit。
+        mapping：
+      </p>
+      <pre>addr = output_channel * 8 + input_channel
+
+co0 ci0..ci7 -> addr 0..7
+co1 ci0..ci7 -> addr 8..15
+co2 ci0..ci7 -> addr 16..23
+co3 ci0..ci7 -> addr 24..31</pre>
+      <table>
+        <thead>
+          <tr>
+            <th>Cycle</th>
+            <th>conv3_weight_addr</th>
+            <th>conv3_weight_data</th>
+            <th>說明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>0</td>
+            <td>0</td>
+            <td>invalid / old</td>
+            <td>送 addr 0。</td>
+          </tr>
+          <tr>
+            <td>1</td>
+            <td>1</td>
+            <td>weight[0]</td>
+            <td>收到 addr 0，同時送 addr 1。</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>2</td>
+            <td>weight[1]</td>
+            <td>收到 addr 1，同時送 addr 2。</td>
+          </tr>
+          <tr>
+            <td>32</td>
+            <td>hold / don't care</td>
+            <td>weight[31]</td>
+            <td>收到最後一筆 Conv3 weight。</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        Conv3 weight 數量比 Conv1 少，但 timing 原則完全相同：data 對應上一拍送出的 address。
+      </p>
+    </section>
+
+    <section>
+      <h2>4. Conv1 M0/M1 Timing</h2>
+      <p>
+        Conv1 有 8 個 output channel，所以 <code>conv1_m0_rom</code> 與
+        <code>conv1_m1_rom</code> depth 都是 8，address width 是 3-bit。
+      </p>
+      <pre>addr = output_channel
+
+ch0 -> addr 0
+ch1 -> addr 1
+...
+ch7 -> addr 7</pre>
+      <table>
+        <thead>
+          <tr>
+            <th>Cycle</th>
+            <th>conv1_m0_addr / conv1_m1_addr</th>
+            <th>conv1_m0_data / conv1_m1_data</th>
+            <th>說明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>0</td>
+            <td>0</td>
+            <td>invalid / old</td>
+            <td>送 channel 0 address。</td>
+          </tr>
+          <tr>
+            <td>1</td>
+            <td>1</td>
+            <td>M0/M1 ch0</td>
+            <td>收到 channel 0，同時送 channel 1。</td>
+          </tr>
+          <tr>
+            <td>...</td>
+            <td>...</td>
+            <td>...</td>
+            <td>每拍送下一個 channel。</td>
+          </tr>
+          <tr>
+            <td>8</td>
+            <td>hold / don't care</td>
+            <td>M0/M1 ch7</td>
+            <td>收到最後一組 Conv1 requant parameter。</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        M0 與 M1 可以同時送同一個 channel address，下一拍同時取得該 channel 的 M0/M1。
+      </p>
+    </section>
+
+    <section>
+      <h2>5. Conv3 M0/M1 Timing</h2>
+      <p>
+        Conv3 有 4 個 output channel，所以 <code>conv3_m0_rom</code> 與
+        <code>conv3_m1_rom</code> depth 都是 4，address width 是 2-bit。
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Cycle</th>
+            <th>conv3_m0_addr / conv3_m1_addr</th>
+            <th>conv3_m0_data / conv3_m1_data</th>
+            <th>說明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>0</td>
+            <td>0</td>
+            <td>invalid / old</td>
+            <td>送 channel 0 address。</td>
+          </tr>
+          <tr>
+            <td>1</td>
+            <td>1</td>
+            <td>M0/M1 ch0</td>
+            <td>收到 channel 0。</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>2</td>
+            <td>M0/M1 ch1</td>
+            <td>收到 channel 1。</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>hold / don't care</td>
+            <td>M0/M1 ch3</td>
+            <td>收到最後一組 Conv3 requant parameter。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>6. Wrapper Timing Problem</h2>
+      <p>
+        Phase8.2 wrapper 使用 internal reg memory，概念上比較像資料已經在 wrapper 裡，可以直接展開接到
+        verified modules。若 Phase8.4 直接把來源換成 ROM，會遇到下列問題：
+      </p>
+      <ul>
+        <li>address 和 data 不同步：data 永遠晚 address 一拍。</li>
+        <li>weight 晚一拍：如果同拍把 address 當成當前 weight 使用，會拿到上一筆或 invalid data。</li>
+        <li>M0/M1 晚一拍：requant parameter 若錯位，輸出會大幅 mismatch。</li>
+        <li>start timing 不明確：如果 convolution 在 ROM preload 完成前開始，會使用到未初始化的 bridge register。</li>
+      </ul>
+      <pre>錯誤直覺：
+cycle N: addr = 10, data = weight[10]
+
+實際 BMG ROM：
+cycle N:   addr = 10
+cycle N+1: data = weight[10]</pre>
+    </section>
+
+    <section>
+      <h2>7. Architecture Options</h2>
+      <h3>Option A：Simple FSM</h3>
+      <pre>IDLE
+  -> SEND_ADDR
+  -> WAIT_ROM
+  -> USE_DATA
+  -> NEXT</pre>
+      <p>優點：</p>
+      <ul>
+        <li>最容易理解。</li>
+        <li>每筆資料都有明確 WAIT_ROM 狀態，debug 波形清楚。</li>
+        <li>很適合 Phase8.4 這種 correctness-first 階段。</li>
+      </ul>
+      <p>缺點：</p>
+      <ul>
+        <li>每筆資料至少多一個等待節拍，效率低。</li>
+        <li>如果逐筆讀 72 個 weight，整體 preload 時間較長。</li>
+      </ul>
+
+      <h3>Option B：Prefetch Pipeline</h3>
+      <pre>cycle N:   send addr[i]
+cycle N+1: capture data[i], send addr[i+1]
+cycle N+2: capture data[i+1], send addr[i+2]</pre>
+      <p>優點：</p>
+      <ul>
+        <li>填滿 pipeline 後，每 cycle 可取得一筆資料。</li>
+        <li>72 個 Conv1 weight 約 73 cycles 可完成，不需要每筆都分 SEND/WAIT/USE 三個狀態。</li>
+        <li>比較接近未來真正 ROM-backed architecture。</li>
+      </ul>
+      <p>缺點：</p>
+      <ul>
+        <li>需要管理 first invalid cycle 與最後 flush cycle。</li>
+        <li>需要小心 data index = addr index delayed by 1。</li>
+        <li>debug 比 Simple FSM 稍微複雜。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>8. Recommended Solution</h2>
+      <p>
+        Phase8.4 的目標是 PASS，不是最高效能。因此建議採用保守的 preload architecture：
+      </p>
+      <pre>ROM IP
+  -> preload parameter registers
+  -> existing verified sr_core_top-style ports
+  -> run full pipeline
+  -> compare output_uint8</pre>
+      <p>
+        實作 preload 時，可以採用 Option B 的 prefetch pipeline，因為它仍然很容易驗證，而且不會過度低效。
+        但 top-level 行為上要保持簡單：只有當所有 parameter registers 都載入完成後，才允許 core start。
+      </p>
+      <div class="decision">
+        <p>
+          建議：Phase8.4b 使用 prefetch preload。先把 ROM 內容載入 wrapper 內部 registers，
+          再沿用 Phase8.2 已驗證的 port-style top connection。這樣可以把「ROM latency 問題」和
+          「CNN datapath correctness」分開。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>9. Expected Wrapper Timing Diagram</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Cycle</th>
+            <th>Addr</th>
+            <th>ROM Data</th>
+            <th>Valid</th>
+            <th>Conv Start</th>
+            <th>Conv Done</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>0</td>
+            <td>first parameter addr</td>
+            <td>invalid</td>
+            <td>0</td>
+            <td>0</td>
+            <td>0</td>
+          </tr>
+          <tr>
+            <td>1</td>
+            <td>next parameter addr</td>
+            <td>parameter[0]</td>
+            <td>1</td>
+            <td>0</td>
+            <td>0</td>
+          </tr>
+          <tr>
+            <td>2..N</td>
+            <td>next addr</td>
+            <td>parameter[i-1]</td>
+            <td>1</td>
+            <td>0</td>
+            <td>0</td>
+          </tr>
+          <tr>
+            <td>N+1</td>
+            <td>hold</td>
+            <td>last parameter</td>
+            <td>1</td>
+            <td>0</td>
+            <td>0</td>
+          </tr>
+          <tr>
+            <td>N+2</td>
+            <td>don't care</td>
+            <td>all params stored</td>
+            <td>preload_done = 1</td>
+            <td>1</td>
+            <td>0</td>
+          </tr>
+          <tr>
+            <td>later</td>
+            <td>don't care</td>
+            <td>register bank used</td>
+            <td>core running</td>
+            <td>0</td>
+            <td>1 when output complete</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        未來 <code>sr_core_top_rom_wrapper</code> 不應在 ROM data 還沒 valid 時啟動 convolution。
+        合理流程是先 preload，等 <code>preload_done</code> 後再啟動 core。
+      </p>
+    </section>
+
+    <section>
+      <h2>10. What Did We Learn?</h2>
+      <p>
+        ROM 與 behavioral memory 最大差異是 timing，不是資料內容。Phase8.3 已經證明資料內容正確，
+        Phase8.4a 則提醒我們：BMG ROM 的資料會晚 address 一拍。
+      </p>
+      <p>
+        因此在 RTL integration 前必須先做 timing analysis。否則很容易遇到看似 weight mapping 錯、
+        requant 參數錯、channel 錯位的問題，但真正原因其實只是 ROM read latency 沒有被處理。
+      </p>
+      <div class="decision">
+        <p>
+          下一步 Phase8.4b 才開始 ROM-backed Wrapper Integration。進入 RTL 前，必須記住：
+          <code>data index = address index delayed by 1 cycle</code>。
+        </p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

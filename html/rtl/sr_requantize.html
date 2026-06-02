@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>sr_requantize 原理與操作紀錄</title>
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="../index.html">SR Core 首頁</a>
+      <a href="index.html">RTL Modules</a>
+      <a href="../RTL_sys_index.html">RTL_sys</a>
+      <a href="../phase8_index.html">Phase8</a>
+      <a href="../tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>sr_requantize 原理與操作紀錄</h1>
+      <p class="small">位置：<code>model_lite/sr_core/html/rtl/sr_requantize.html</code></p>
+      <p class="small">回到 RTL 進度：<a href="index.html">rtl/index.html</a></p>
+      <p>
+        這頁專門記錄 <code>sr_requantize</code> 的目的、數學公式、
+        Verilog 實作重點，以及 testbench 如何拿 Conv3 layer 的 golden 做 bit-exact 驗證。
+      </p>
+    </header>
+
+    <section>
+      <h2>1. Module 目的</h2>
+      <p>
+        <code>sr_requantize</code> 是目前第一個正式 RTL module。
+        它不做 Conv、不做 Window、不做 PixelShuffle，也不做 pipeline。
+        這一關只驗證 fixed-point requantization arithmetic。
+      </p>
+
+      <div class="decision">
+        <p>
+          Requantization 很重要，因為 Conv MAC 會累加成 int32，
+          但下一層 activation 通常需要回到 int8。
+          所以 int32 accumulator 必須透過 M0 / M1 轉回 int8 quantized value。
+        </p>
+      </div>
+
+      <div class="warn">
+        <p>
+          命名注意：<code>Conv1</code> 是第一個 convolution layer，kernel 是 <code>3x3</code>。
+          <code>Conv3</code> 是後面的 convolution layer，kernel 是 <code>1x1</code>。
+          本頁測的是 <code>Conv3</code> layer output 的 requant，不是 3x3 convolution。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. Requantization 數學</h2>
+      <p>目前公式：</p>
+      <pre>q_out_tmp = acc * m0 + m1
+
+rounded = q_out_tmp >>> 32
+
+if q_out_tmp[31] == 1:
+    rounded = rounded + 1 (tflite 是 round-half-up 對負數其實不完全對稱)
+
+q_out = clamp(rounded, -128, 127)</pre>
+
+      <table>
+        <thead>
+          <tr>
+            <th>訊號</th>
+            <th>寬度</th>
+            <th>意義</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>acc</code></td>
+            <td>signed 32-bit</td>
+            <td>Conv MAC 後的 int32 accumulator。</td>
+          </tr>
+          <tr>
+            <td><code>m0</code></td>
+            <td>signed 32-bit</td>
+            <td>由 TFLite quantization scale 推出來的 fixed-point multiplier。</td>
+          </tr>
+          <tr>
+            <td><code>m1</code></td>
+            <td>signed 64-bit</td>
+            <td>zero point 與 multiplier 相關的 offset 修正項。</td>
+          </tr>
+          <tr>
+            <td><code>q_out</code></td>
+            <td>signed 8-bit</td>
+            <td>requant 後的 int8 output。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>3. RTL 實作重點</h2>
+      <h3>3.1 signed arithmetic</h3>
+      <p>
+        RTL 裡的 input、wire、reg 都要清楚標成 <code>signed</code>。
+        如果漏掉 signed，Verilog 很容易把某些運算當成 unsigned，
+        負數的乘法、加法和右移就可能錯掉。
+      </p>
+
+      <h3>3.2 乘法寬度</h3>
+      <p>目前採用比較乾淨的寫法：</p>
+      <pre>wire signed [63:0] mult;
+
+assign mult      = acc * m0;
+assign q_out_tmp = mult + m1;</pre>
+
+      <p>
+        原因是 <code>32-bit x 32-bit</code> 的結果本來就是 64-bit。
+        之前如果寫成 128-bit 再截低 64-bit，雖然目前資料能過，
+        但容易讓人誤會有刻意做 128-bit 運算。
+      </p>
+
+      <h3>3.3 arithmetic shift</h3>
+      <p>
+        <code>q_out_tmp &gt;&gt;&gt; 32</code> 使用 arithmetic right shift。
+        它會保留 sign bit，適合 signed fixed-point 數值。
+        如果用 logical shift <code>&gt;&gt;</code>，負數右移時可能變成錯的正數。
+      </p>
+
+      <h3>3.4 rounding bit ( round-half-up  )</h3>
+      <p>
+        右移 32 bit 代表低 32 bit 被丟掉。
+        <code>q_out_tmp[31]</code> 是被丟掉部分的最高 bit，
+        目前 golden 的行為是如果這個 bit 為 1，就在 shifted 結果上加 1。
+      </p>
+
+      <h3>3.5 clamp 到 int8</h3>
+      <p>
+        最後結果必須限制在 signed int8 範圍：
+      </p>
+      <pre>-128 <= q_out <= 127</pre>
+    </section>
+
+    <section>
+      <h2>4. 檔案位置</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>檔案</th>
+            <th>用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>model_lite/sr_core/RTL/sr_requantize/sr_requantize.v</code></td>
+            <td>combinational requantization RTL。</td>
+          </tr>
+          <tr>
+            <td><code>model_lite/sr_core/RTL/sr_requantize/tb_sr_requantize.v</code></td>
+            <td>Conv3 requant golden compare testbench。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>5. Testbench 使用資料</h2>
+      <p>
+        目前使用 Conv3 layer 的 golden，因為 Conv3 是 <code>1x1</code> kernel，
+        而且 Conv3 output 後面沒有 ReLU，最單純：
+      </p>
+      <pre>conv3_acc_int32
+  -> requant
+  -> conv3_out_int8</pre>
+
+      <table>
+        <thead>
+          <tr>
+            <th>資料</th>
+            <th>檔案</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>acc input</td>
+            <td><code>generated/golden/conv3_acc_int32.mem</code></td>
+          </tr>
+          <tr>
+            <td>m0</td>
+            <td><code>generated/conv3_m0.mem</code></td>
+          </tr>
+          <tr>
+            <td>m1</td>
+            <td><code>generated/conv3_m1.mem</code></td>
+          </tr>
+          <tr>
+            <td>golden output</td>
+            <td><code>generated/golden/conv3_out_int8.mem</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="warn">
+        <p>
+          原本需求寫使用 <code>$readmemh</code>，但目前這些 <code>.mem</code>
+          實際內容是 signed decimal text，例如 <code>-8758</code>、<code>60421536</code>。
+          所以 testbench 使用 <code>$fscanf(..., "%d")</code> 讀取，
+          這樣才能正確讀入負數與十進位資料。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>6. Testbench 流程</h2>
+      <pre>1. 開啟 conv3_acc_int32.mem
+2. 開啟 conv3_m0.mem
+3. 開啟 conv3_m1.mem
+4. 開啟 conv3_out_int8.mem
+5. 讀入所有 golden / parameter
+6. 逐筆送入 acc, m0, m1
+7. 等 combinational output 穩定
+8. 比對 RTL q_out 與 golden
+9. 統計 mismatch count 與 max abs diff</pre>
+
+      <p>
+        Conv3 layer 的 <code>Cout = 4</code>，所以每個 output index 對應的 channel
+        是 <code>0, 1, 2, 3</code> 循環：
+      </p>
+      <pre>ch = i % COUT;</pre>
+    </section>
+
+    <section>
+      <h2>7. Simulation 輸出</h2>
+      <p>simulation 結束時印出：</p>
+      <pre>mismatch count
+max abs diff</pre>
+
+      <p>若 mismatch，會印出：</p>
+      <pre>index
+acc
+m0
+m1
+golden
+rtl_out</pre>
+
+      <p>目前結果：</p>
+      
+        <pre>mismatch count = 0
+max abs diff   = 0
+PASS</pre>
+   
+    </section>
+
+    <section>
+      <h2>8. 這一關的意義</h2>
+      <p>
+        這一關 PASS 代表 RTL 的 requantization arithmetic
+        已經與 runtime-verified TFLite golden 完全一致。
+        接下來才適合把這個 module 接到 Conv MAC、ReLU、PixelShuffle 等 dataflow module。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

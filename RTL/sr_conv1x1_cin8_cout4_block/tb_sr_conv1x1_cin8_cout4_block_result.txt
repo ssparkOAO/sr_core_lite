@@ -1,0 +1,13 @@
+sr_conv1x1_cin8_cout4_block verification result
+==================================================
+Purpose : Conv3 layer 1x1 MAC + requant
+Input   : conv1_out_int8.mem, shape (H,W,8), NHWC
+Weight  : conv3_weight.mem, shape [4,1,1,8], cout-major
+M0      : conv3_m0.mem, 4 values
+M1      : conv3_m1.mem, 4 values
+Golden  : conv3_out_int8.mem, shape (H,W,4)
+No PixelShuffle, no streaming, no pipeline optimization
+
+mismatch count = 0
+max abs diff   = 0
+PASS

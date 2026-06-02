@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Scale 與 Zero Point 學習紀錄</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>Scale 與 Zero Point 學習紀錄</h1>
+      <p class="small">主題：為什麼量化是 <code>q = round(r / S) + Z</code>，而不是 <code>q = round((r + Z) / S)</code></p>
+      <p class="small">回到：<a href="index.html">SR Core 最小功能設計紀錄</a></p>
+    </header>
+
+    <section>
+      <h2>1. 這次學到的核心觀念</h2>
+      <div class="decision">
+        <p>
+          量化公式中，<code>S</code> 和 <code>Z</code> 負責的是兩件不同的事情。
+        </p>
+        <p>
+          <strong>Scale <code>S</code></strong> 決定每一格代表多少真實數值，也就是比例。
+          <strong>Zero point <code>Z</code></strong> 決定真實世界的 0 要放在整數座標的哪裡，也就是座標偏移。
+        </p>
+      </div>
+      <pre>正確公式:
+
+q = round(r / S) + Z
+
+反量化:
+
+r = S * (q - Z)</pre>
+      <p>
+        直覺上，要先用 <code>S</code> 決定「這個 real value 是第幾格」，
+        再用 <code>Z</code> 決定「整數座標的原點在哪裡」。
+      </p>
+    </section>
+
+    <section>
+      <h2>2. S 和 Z 的角色分工</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>符號</th>
+            <th>角色</th>
+            <th>直覺</th>
+            <th>單位</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>S</code></td>
+            <td>scale</td>
+            <td>每一格有多寬</td>
+            <td>真實值 / 整數格</td>
+          </tr>
+          <tr>
+            <td><code>Z</code></td>
+            <td>zero point</td>
+            <td>真實世界的 0 對應到哪一個整數座標</td>
+            <td>整數座標</td>
+          </tr>
+          <tr>
+            <td><code>r</code></td>
+            <td>real value</td>
+            <td>真實世界的數值</td>
+            <td>真實值</td>
+          </tr>
+          <tr>
+            <td><code>q</code></td>
+            <td>quantized value</td>
+            <td>硬體裡存的整數</td>
+            <td>整數座標</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        因為 <code>Z</code> 是整數座標偏移，不是真實世界的數值，
+        所以不能拿 <code>r + Z</code> 這種方式先加在一起。
+      </p>
+    </section>
+
+    <section>
+      <h2>3. 用 -1 到 1 的範圍理解</h2>
+      <p>
+        先看真實世界的數值範圍：
+      </p>
+      <pre>real r:
+
+-1              0              1
+ |--------------|--------------|</pre>
+      <p>
+        假設要對應到 int8 的 256 個格子：
+      </p>
+      <pre>int8 q:
+
+-128                         127
+  |---------------------------|</pre>
+      <p>
+        若 real range 是 <code>[-1, 1]</code>，那 scale 可以理解成：
+      </p>
+      <pre>S = (beta - alpha) / 255
+  = (1 - (-1)) / 255
+  = 2 / 255
+  = 0.00784</pre>
+      <p>
+        也就是每一個整數格代表約 <code>0.00784</code> 的真實數值。
+        這一步只是在切尺，還沒有決定真實世界的 0 放在哪個 int8 位置。
+      </p>
+    </section>
+
+    <section>
+      <h2>4. 正確順序：先縮放，再平移</h2>
+      <p>
+        假設：
+      </p>
+      <pre>r = 0.2
+S = 2 / 255
+Z = -128</pre>
+      <p>
+        先除以 scale：
+      </p>
+      <pre>r / S = 0.2 / (2 / 255)
+      = 25.5</pre>
+      <p>
+        意思是：<code>0.2</code> 這個真實值大約落在第 <code>25.5</code> 格。
+      </p>
+      <pre>real:
+
+0.2
+ ↓
+
+先用 S 決定第幾格:
+
+25.5 → round → 25</pre>
+      <p>
+        接著再加 zero point：
+      </p>
+      <pre>q = 25 + (-128)
+  = -103</pre>
+      <p>
+        所以：
+      </p>
+      <pre>真實值 0.2
+  ↓ 除以 S，決定第幾格
+25
+  ↓ 加 Z，決定整數座標原點
+-103</pre>
+    </section>
+
+    <section>
+      <h2>5. 錯誤順序：先加 Z 再除 S</h2>
+      <p>
+        如果錯誤地寫成：
+      </p>
+      <pre>q = round((r + Z) / S)</pre>
+      <p>
+        代入同樣例子：
+      </p>
+      <pre>r = 0.2
+Z = -128
+S = 2 / 255
+
+(r + Z) = 0.2 - 128
+        = -127.8
+
+(r + Z) / S = -127.8 / (2 / 255)
+            = -16294.5</pre>
+      <p>
+        這個結果完全沒有物理意義，因為 <code>Z=-128</code> 不是「真實世界的 -128」，
+        它只是「整數座標的 -128」。
+      </p>
+      <div class="warn">
+        <p>
+          錯誤的根本原因：把不同單位的東西加在一起。
+          <code>r</code> 是真實值，<code>Z</code> 是整數座標，它們不能直接相加。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>6. 用 FPGA 影像輸入理解</h2>
+      <p>
+        假設影像 pixel 是 <code>uint8</code>，範圍 <code>0..255</code>。
+        若模型 input 是 int8，常見設定接近：
+      </p>
+      <pre>input scale = 1 / 255 = 0.00392
+input zero point = -128</pre>
+      <p>
+        對 pixel <code>100</code> 來說，如果把它視為真實值 <code>100/255</code>，
+        量化到 int8 input 等價於：
+      </p>
+      <pre>q = round((100 / 255) / (1 / 255)) + (-128)
+  = 100 - 128
+  = -28</pre>
+      <p>
+        所以實作上常可以直接寫：
+      </p>
+      <pre>input_int8 = pixel_uint8 - 128</pre>
+      <p>
+        但這成立的前提是：uint8 pixel 的 real scale 和模型 input scale 對得上。
+        若 scale 不同，就不能只做簡單減 128，必須依公式轉換。
+      </p>
+    </section>
+
+    <section>
+      <h2>7. 圖像化流程</h2>
+      <p>正確流程：</p>
+      <pre>真實值 r
+  ↓
+[除以 S]
+  ↓
+決定第幾格
+  ↓
+[加 Z]
+  ↓
+整數座標 q</pre>
+      <p>錯誤流程：</p>
+      <pre>真實值 r
+  ↓
+[先加 Z]
+  ↓
+把真實值和整數座標混在一起
+  ↓
+[再除以 S]
+  ↓
+數值爆掉，沒有物理意義</pre>
+    </section>
+
+    <section>
+      <h2>8. 對 SR Core 的意義</h2>
+      <p>
+        對目前 SR FPGA project 來說，這個觀念會影響三個地方：
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>位置</th>
+            <th>要做的事</th>
+            <th>原因</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>PS input preprocessing</td>
+            <td>把 <code>uint8 image</code> 轉成模型 input tensor 需要的 quantized value。</td>
+            <td>input scale / zero point 決定第一層 Conv 吃到什麼 int8。</td>
+          </tr>
+          <tr>
+            <td>PL Conv requantization</td>
+            <td>用 <code>M0/M1</code> 把 int32 accumulation 轉成下一層 int8。</td>
+            <td>每一層 output scale / zero point 可能不同。</td>
+          </tr>
+          <tr>
+            <td>final output</td>
+            <td>把最後 int8 / uint8 output 對回影像數值。</td>
+            <td>輸出給 PS 比對 TFLite golden 或顯示影像。</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="note">
+        <p>
+          簡單記法：<strong>S 是尺的刻度，Z 是尺的零點位置。</strong>
+          先看數值落在第幾格，再把座標原點移到對的位置。
+        </p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

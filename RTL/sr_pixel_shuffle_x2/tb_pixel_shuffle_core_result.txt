@@ -1,0 +1,10 @@
+pixel_shuffle_core transaction verification result
+==================================================
+Purpose : PixelShuffle x2 write transaction core
+Input   : conv3_out_int8.mem, shape (8,8,4), NHWC
+Golden  : pixel_shuffle_out_int8.mem, shape (16,16,1)
+Memory  : one fake dual-port memory sink in testbench
+
+mismatch count = 0
+max abs diff   = 0
+PASS

@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>TFLite 量化參數轉硬體格式分析 (M0、Z1*a2)</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>TFLite 量化參數轉硬體格式分析 (M0、Z1*a2)</h1>
+      <p class="small">分析來源：<code>ref/cnn_classfication/CNN_training/write_coe.ipynb</code></p>
+      <p class="small">回到：<a href="index.html">SR Core 最小功能設計紀錄</a></p>
+    </header>
+
+    <section>
+      <h2>1. 這個 Notebook 在做什麼？</h2>
+      <p>
+        <code>write_coe.ipynb</code> 並不是在重新做 training quantization，也不是把 float model 轉成 int8 model。
+        它假設已經有 <code>model_quant.tflite</code>，然後從 TFLite 取出 int8 weight、int32 bias、
+        input/output scale、zero point，再計算硬體需要的整數常數，最後輸出成 Vivado BRAM 可用的
+        <code>.coe</code>。
+      </p>
+      <pre>已量化 TFLite
+  → TensorFlow Lite Interpreter 讀 tensor details
+  → 找出 Conv2D / Dense 的 weight、bias、scale、zero point
+  → 計算硬體 requantization 常數
+  → 依 RTL 讀取順序重排 weight
+  → 寫成 weights_my.coe 與 M0_bias_my.coe</pre>
+      <p>
+        所以你原本想的「轉成 TFLite 後提取就好」方向是對的，只是硬體通常不能直接吃 TFLite 原始格式。
+        需要多做一步：把 TFLite 的量化參數轉成 RTL 方便使用的整數常數與記憶體排列。
+      </p>
+    </section>
+
+    <section>
+      <h2>2. 為什麼還要算 M0、Z1*a2？</h2>
+      <p>
+        TFLite int8 convolution 的數學概念是：
+      <pre>為何 q3 不是直接 sum(q1*q2)
+
+答案：          
+因為 q1 和 q2 不是「真正數值」，它們只是量化座標。所以必須由實數(r)推導</pre>
+      </p>
+      <img class="diagram" src="../pic/quant.png" alt="SR core architecture">
+      <pre>real_input  = S1 * (q1 - Z1)
+real_weight = S2 * q2          // weight zero point 通常是 0 (z2)
+real_output = S3 * (q3 - Z3)</pre>
+      <p>
+        Conv 的 int32 MAC 會先算：
+      </p>
+      <pre>a3 = sum(q1 * q2)</pre>
+      <p>
+        但真正要對齊 TFLite 時，input zero point 也要扣掉：
+      </p>
+      <pre>sum((q1 - Z1) * q2)
+= sum(q1*q2) - Z1 * sum(q2)
+= a3 - Z1*a2</pre>
+      <p>
+        其中：
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>名稱</th>
+            <th>意思</th>
+            <th>硬體用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>a2</code></td>
+            <td>某個 output channel 的所有 weight 總和，<code>sum(q2)</code>。</td>
+            <td>修正 input zero point 對 MAC 結果的影響。</td>
+          </tr>
+          <tr>
+            <td><code>Z1*a2</code></td>
+            <td>input zero point 乘上 weight 總和。</td>
+            <td>讓硬體可以做 <code>a3 - Z1*a2 + bias</code>。</td>
+          </tr>
+          <tr>
+            <td><code>M</code></td>
+            <td><code>S1 * S2 / S3</code>，浮點 requant multiplier。</td>
+            <td>把 int32 accumulation 轉回 output int8 尺度。</td>
+          </tr>
+          <tr>
+            <td><code>M0</code></td>
+            <td><code>M * 2^32</code> 後轉成整數。</td>
+            <td>RTL 可用 <code>int64 multiply + right shift 32</code> 取代浮點乘法。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>3. Notebook 的兩種寫法</h2>
+      <p>
+        Conv 本來就是 乘加(MAC)+ bias：
+        <img class="diagram" src="../pic/conv基本.png" >
+
+        <code>write_coe.ipynb</code> 裡用比較直覺的方式輸出：
+      </p>
+      <pre>每個 output channel:
+  M0
+  Z1*a2
+  bias</pre>
+      <p>
+         <img class="diagram" src="../pic/公式1.png" >
+        這表示 RTL 之後要自己做：
+      </p>
+      <pre>acc_corrected = acc - Z1a2 + bias
+q_out_tmp     = acc_corrected * M0
+q_out         = round(q_out_tmp / 2^32) + Z3
+q_out_clamp   = clamp(q_out, -128, 127)</pre>
+      <p>
+        同一個資料夾的 <code>library/hardware_weight_compiler.py</code> 有更進一步的整理方式：
+      </p>
+      <img class="diagram" src="../pic/公式2.png" >
+      <pre>M1 = M0 * (bias - Z1*a2) + (Z3 << 32)
+q_out_tmp = M0 * acc + M1
+q_out     = round(q_out_tmp / 2^32
+q_out_clamp   = clamp(q_out, -128, 127)</pre>
+      <p>
+        這種方式把 <code>bias</code>、<code>Z1*a2</code>、<code>Z3</code> 預先合成成 <code>M1</code>，
+        RTL datapath 會比較簡單。對你的 SR core 來說，我建議後續採用 <code>M0 + M1</code> 版本，
+        因為 requantization module 的 port 可以更乾淨。
+      </p>
+    </section>
+
+    <section>
+      <h2>4. weights_my.coe 在做什麼？</h2>
+      <p>
+        <code>weights_my.coe</code> 是把 TFLite 的 weight tensor 依照 RTL 讀取順序重新排列。
+        TFLite Conv2D weight shape 通常是：
+      </p>
+      <pre>[output_channel, kernel_h, kernel_w, input_channel]</pre>
+      <p>
+        但 RTL MAC 可能比較想用下面其中一種順序讀：
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>讀取順序</th>
+            <th>適合情境</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>cin → cout → kh → kw</code></td>
+            <td>逐 input channel 累加，適合 multi-channel conv 分批處理。</td>
+          </tr>
+          <tr>
+            <td><code>cout → kh → kw → cin</code></td>
+            <td>一次算某個 output channel，資料排列直覺。</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        所以這不是模型量化，而是「把 weight 排成硬體容易讀的 BRAM layout」。
+      </p>
+    </section>
+
+    <section>
+      <h2>5. 如果換成你的 Super Resolution TFLite，要怎麼做？</h2>
+      <p>
+        你的模型不需要照抄 cnn_classfication 的 notebook，因為你的網路比較小，而且沒有 Dense / MaxPool。
+        你需要做的是一個更乾淨的 SR 專用 extractor。
+      </p>
+      <pre>輸入:
+  model/Bilinear_PP_v5_test_qat.tflite
+
+輸出:
+  conv1_weight.coe 或 conv1_weight.mem
+  conv1_param.coe  或 conv1_param.mem
+  conv3_weight.coe 或 conv3_weight.mem
+  conv3_param.coe  或 conv3_param.mem
+  quant_report.html
+  golden intermediate tensors</pre>
+
+      <h3>5.1 Conv1 需要提取</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>項目</th>
+            <th>來源</th>
+            <th>硬體用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>input scale / zero point</td>
+            <td>Conv1 input tensor</td>
+            <td>計算 <code>M0/M1</code>。</td>
+          </tr>
+          <tr>
+            <td>weight int8</td>
+            <td>Conv1 filter tensor <code>[8,3,3,1]</code></td>
+            <td>Conv3x3 MAC。</td>
+          </tr>
+          <tr>
+            <td>weight scale per output channel</td>
+            <td>Conv1 filter quantization</td>
+            <td>每個 output channel 有自己的 <code>M0/M1</code>。</td>
+          </tr>
+          <tr>
+            <td>bias int32</td>
+            <td>Conv1 bias tensor <code>[8]</code></td>
+            <td>加在 int32 accumulation 上。</td>
+          </tr>
+          <tr>
+            <td>output scale / zero point</td>
+            <td>Conv1 output tensor</td>
+            <td>Requantization 到 Conv1 output int8。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>5.2 Conv3 需要提取</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>項目</th>
+            <th>來源</th>
+            <th>硬體用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>input scale / zero point</td>
+            <td>Conv1/ReLU output tensor</td>
+            <td>Conv3 的 input quantization。</td>
+          </tr>
+          <tr>
+            <td>weight int8</td>
+            <td>Conv3 filter tensor <code>[4,1,1,8]</code></td>
+            <td>Conv1x1 MAC。</td>
+          </tr>
+          <tr>
+            <td>weight scale per output channel</td>
+            <td>Conv3 filter quantization</td>
+            <td>四個 sub-pixel channel 各自的 multiplier。</td>
+          </tr>
+          <tr>
+            <td>bias int32</td>
+            <td>Conv3 bias tensor <code>[4]</code></td>
+            <td>加在 int32 accumulation 上。</td>
+          </tr>
+          <tr>
+            <td>output scale / zero point</td>
+            <td>Conv3 output tensor</td>
+            <td>PixelShuffle 前的 int8 tensor。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>6. 對 SR Core 的建議</h2>
+      <div class="decision">
+        <p>
+          第一版不要先做完整 <code>.coe</code> 自動產生流程。先把 extractor 做成可以輸出
+          <code>conv1/conv3</code> 的 weight、bias、scale、zero point、<code>M0/M1</code> 表格，
+          再用小 patch testbench 驗證數學結果。
+        </p>
+      </div>
+      <p>
+        最小功能最需要的是可比對，不是漂亮的部署格式。建議順序是：
+      </p>
+      <pre>Step 1: 從 SR TFLite 提取 Conv1 / Conv3 tensors
+Step 2: 產生 Python golden: int8 input → Conv1 → ReLU → Conv3
+Step 3: 產生 RTL 用 .mem/.coe: weight + M0/M1
+Step 4: 先驗證 Conv1x1 或 Conv3x3 單層
+Step 5: 再接 PixelShuffle wrapper</pre>
+      <p>
+        等 RTL core 的計算確認和 TFLite intermediate tensor 對得上，再把輸出格式固定成 Vivado BRAM 的
+        <code>.coe</code> 或 testbench 較好讀的 <code>.mem</code>。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

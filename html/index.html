@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>SR Core 最小功能設計紀錄</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>SR Core 最小功能設計紀錄</h1>
+      <p class="small">位置：<code>model_lite/sr_core/html/index.html</code></p>
+
+      <p class="small">相關 M0、Z1*a2 推導：<a href="tflite_quant_to_hw.html">tflite_quant_to_hw.html</a></p>
+      <p class="small">學習紀錄：<a href="quant_flow_learning.html">quant_flow_learning.html</a></p>
+      <p class="small">學習紀錄：<a href="scale_zero_point_learning.html">scale_zero_point_learning.html</a></p>
+      <p class="small">工具紀錄：<a href="python_toolchain_record.html">python_toolchain_record.html</a></p>
+      <p class="small">Vivado hex 轉檔工具：<a href="tool_convert_generated_to_vivado_hex.html">tool_convert_generated_to_vivado_hex.html</a></p>
+      <p class="small">驗證紀錄：<a href="runtime_verified_golden_flow.html">runtime_verified_golden_flow.html</a></p>
+      <p class="small">RTL 開發紀錄：<a href="rtl/index.html">rtl/index.html</a></p>
+      <p class="small">RTL_sys 系統架構：<a href="RTL_sys_index.html">RTL_sys_index.html</a></p>
+      <p class="small">Phase2 Conv3 1x1 MAC：<a href="phase2_conv1x1_mac.html">phase2_conv1x1_mac.html</a></p>
+      <p class="small">Phase2.5 Conv3 block：<a href="phase2_5_conv3_block.html">phase2_5_conv3_block.html</a></p>
+      <p class="small">Phase3 PixelShuffle：<a href="phase3_pixel_shuffle_transaction_core.html">phase3_pixel_shuffle_transaction_core.html</a></p>
+      <p class="small">Phase4 Conv1 3x3 MAC：<a href="phase4_conv1_3x3_mac.html">phase4_conv1_3x3_mac.html</a></p>
+      <p class="small">Phase4.5 Conv1 full block：<a href="phase4_5_conv1_full_block.html">phase4_5_conv1_full_block.html</a></p>
+      <p class="small">Phase5 Output Clip：<a href="phase5_output_clip.html">phase5_output_clip.html</a></p>
+      <p class="small">Phase6 Output Stage：<a href="phase6_output_stage.html">phase6_output_stage.html</a></p>
+      <p class="small">Phase7 SR Core Top：<a href="phase7_sr_core_top.html">phase7_sr_core_top.html</a></p>
+      <p class="small">Phase8 完整紀錄：<a href="phase8_index.html">phase8_index.html</a></p>
+      <p class="small">Phase8.1 Self-Check：<a href="phase8_1_memory_mapping_selfcheck.html">phase8_1_memory_mapping_selfcheck.html</a></p>
+      <p class="small">Phase8.2 Wrapper：<a href="phase8_2_memory_oriented_wrapper.html">phase8_2_memory_oriented_wrapper.html</a></p>
+      <p class="small">Phase8.3 Vivado BRAM：<a href="phase8_3_vivado_bram.html">phase8_3_vivado_bram.html</a></p>
+      <p class="small">Phase8.3 GUI 操作：<a href="phase8_3_vivado_bram_gui.html">phase8_3_vivado_bram_gui.html</a></p>
+      <p class="small">Phase8.4 ROM-backed Wrapper 分析：<a href="phase8_4_rom_backed_wrapper.html">phase8_4_rom_backed_wrapper.html</a></p>
+      <p class="small">Phase8.4a ROM Timing Analysis：<a href="phase8_4a_rom_timing_analysis.html">phase8_4a_rom_timing_analysis.html</a></p>
+      <p class="small">Phase8.4b ROM Preload Wrapper：<a href="phase8_4b_rom_preload_wrapper.html">phase8_4b_rom_preload_wrapper.html</a></p>
+      <p class="small">下一版部署 Roadmap：<a href="deployment_roadmap.html">deployment_roadmap.html</a></p>
+
+      <p>
+        這份文件用來回答目前最重要的設計問題：TFLite 權重要不要跟固定輸入尺寸綁在一起，
+        以及 <code>sr_core</code> 第一版應該切到多少才適合逐步驗證。
+      </p>
+    </header>
+
+    <section>
+      <h2>Project Workspace Split</h2>
+      <p>
+        目前 SR accelerator 已完成 module-level 與 end-to-end functional verification。
+        從現在開始，專案分成兩個工作區：已驗證的 RTL module library，以及新的 system architecture workspace。
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Workspace</th>
+            <th>定位</th>
+            <th>入口</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>RTL Modules</td>
+            <td>已驗證模組。保留目前 PASS 的 Conv1、Conv3、PixelShuffle、OutputStage、sr_core_top，作為 Golden RTL Version。</td>
+            <td><a href="rtl/index.html">rtl/index.html</a></td>
+          </tr>
+          <tr>
+            <td>RTL System Architecture</td>
+            <td>系統整合與未來開發。Weight Memory、Streaming、BRAM、AXI、DMA、PS-PL integration 都從這裡開始。</td>
+            <td><a href="RTL_sys_index.html">RTL_sys_index.html</a></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="decision">
+        <p>
+          新規則：未來新的 architecture refactor 不直接修改 <code>model_lite/sr_core/RTL</code>。
+          <code>RTL</code> 保留為 verified module library；
+          <code>RTL_sys</code> 作為 accelerator system architecture workspace。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>1. 目前架構圖理解</h2>
+      <img class="diagram" src="../model.png" alt="SR core architecture">
+
+      <p>這張圖的核心資料路徑是：</p>
+      <pre>LR input, C=1
+  -> Conv 3x3, Cout=8
+  -> ReLU
+  -> Conv 1x1, Cout=4
+  -> quantization / clamp / format conversion
+  -> PixelShuffle, scale=2
+  -> HR output, C=1, H=2H, W=2W</pre>
+
+      <p>
+        這個切法很適合你的最終目標，因為它剛好對應 <code>model/</code> 裡的簡化版 Super Resolution：
+        第一層負責抽特徵，第二層產生四個 sub-pixel channel，最後由 PixelShuffle 做 Depth-to-Space。
+      </p>
+    </section>
+
+    <section>
+      <h2>2. TFLite 權重要用固定尺寸還是不要？</h2>
+      <div class="decision">
+        <p>
+          建議答案：最小功能階段先不要把「權重」和固定影像尺寸綁死。
+        </p>
+        <p>
+          但 RTL / testbench 的 feature map 尺寸可以先固定成小 patch，例如 <code>8x8</code>、
+          <code>16x16</code>，這樣最容易驗證。
+        </p>
+      </div>
+
+      <h3>2.1 為什麼權重不需要固定尺寸？</h3>
+      <p>
+        Conv2D 的 weight shape 只跟 kernel size、input channel、output channel 有關，
+        跟輸入影像的 <code>H</code>、<code>W</code> 無關。
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Layer</th>
+            <th>Weight shape</th>
+            <th>是否跟 H/W 有關</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Conv 3x3</td>
+            <td><code>[8, 3, 3, 1]</code></td>
+            <td>無關</td>
+          </tr>
+          <tr>
+            <td>Conv 1x1</td>
+            <td><code>[4, 1, 1, 8]</code></td>
+            <td>無關</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>
+        所以對 PL 來說，TFLite 的固定尺寸或動態尺寸不是「權重格式」問題，
+        而是 activation buffer 大小、output buffer 大小、golden result 產生方式的問題。
+      </p>
+
+      <h3>2.2 最小功能階段推薦使用哪個 TFLite？</h3>
+      <p>
+        第一版建議以 <code>Bilinear_PP_v5_test_qat.tflite</code> 當主要 golden 來源，
+        因為它是動態輸入尺寸，比較容易拿小 patch 做驗證。你可以用很小的 input，
+        例如 <code>8x8x1</code>，直接比對 TFLite / Python golden，不需要一開始就跑完整 <code>256x320</code>。
+      </p>
+      <p>
+        <code>Bilinear_PP_v5_test_qat_time.tflite</code> 則保留到後面整張圖或效能驗證時使用，
+        因為它的 input 固定為 <code>[1,256,320,1]</code>，更接近最後部署情境，
+        但不適合第一個最小 test。
+      </p>
+
+      <div class="warn">
+        <p>
+          重要：不要混用兩個 TFLite 的 quantization parameter。
+          即使模型拓撲一樣，固定尺寸版與動態尺寸版的 input/output scale 可能不同。
+          最小功能階段應該選定一個 TFLite，weight、bias、scale、zero point 都從同一個檔案來。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>3. sr_core 第一版邊界</h2>
+      <p>
+        <code>sr_core</code> 第一版應該先是「純運算核心」，不要把 AXI DMA、AXI-Lite register、
+        PS 控制流程全部塞進來。這樣可以先用 testbench 驗證數學結果，再往外接 PS/PL。
+      </p>
+
+      <h3>3.1 第一版不放進 sr_core 的東西</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>項目</th>
+            <th>原因</th>
+            <th>之後放哪裡</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>AXI-Lite register</td>
+            <td>屬於 PS 控制介面，先不影響 MAC 正確性。</td>
+            <td><code>sr_axi_lite_regs</code></td>
+          </tr>
+          <tr>
+            <td>AXI DMA / AXI Stream packet parser</td>
+            <td>屬於資料搬運，先不要和卷積除錯混在一起。</td>
+            <td><code>sr_axis_rx</code>、<code>sr_packet_loader</code></td>
+          </tr>
+          <tr>
+            <td>完整圖片輸入輸出</td>
+            <td>buffer 太大，第一版驗證時間和除錯成本太高。</td>
+            <td>Stage 5 再做</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>3.2 sr_core 第一版建議 port 概念</h3>
+      <pre>sr_core_top
+  input:
+    clk
+    rst_n
+    start
+    input feature buffer read data
+    weight buffer read data
+    bias / quant parameter read data
+
+  output:
+    busy
+    done
+    output feature buffer write enable
+    output feature buffer write address
+    output feature buffer write data</pre>
+
+      <p>
+        也就是說，第一版可以假設 input、weight、bias、quant parameter 已經被外部 loader 放進 buffer。
+        <code>sr_core</code> 只負責依照固定流程把它們讀出來、計算、寫回 output buffer。
+      </p>
+    </section>
+
+    <section>
+      <h2>4. 最小功能實作順序</h2>
+      <p>
+        為了符合「可驗證優先」，不建議第一個 RTL 就直接完成整張圖裡的所有 block。
+        建議分成下面幾個小階段。
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>階段</th>
+            <th>硬體功能</th>
+            <th>驗證目標</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Core V0</td>
+            <td>單點 1x1 Conv，int8 input/weight，int32 accumulation。</td>
+            <td>確認 MAC、bias、requantization 公式正確。</td>
+          </tr>
+          <tr>
+            <td>Core V1</td>
+            <td>Conv 3x3，Cin=1，Cout=8，小 patch。</td>
+            <td>確認 window、padding、row/col 掃描正確。</td>
+          </tr>
+          <tr>
+            <td>Core V2</td>
+            <td>Conv 3x3 + ReLU + requantization。</td>
+            <td>確認 Conv1 output 可以對齊 TFLite intermediate tensor。</td>
+          </tr>
+          <tr>
+            <td>Core V3</td>
+            <td>Conv 1x1，Cin=8，Cout=4。</td>
+            <td>確認產生 PixelShuffle 前的 4-channel sub-pixel tensor。</td>
+          </tr>
+          <tr>
+            <td>Core V4</td>
+            <td>接入既有 PixelShuffle wrapper。</td>
+            <td>確認 Depth-to-Space 位置 mapping 完全正確。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>5. sr_core 內部 data flow</h2>
+      <pre>input_buffer
+  -> stream_window_3x3
+  -> conv3x3_mac_cin1_cout8
+  -> requantize_conv1
+  -> relu_int8
+  -> feature_buffer_mid
+  -> conv1x1_mac_cin8_cout4
+  -> requantize_conv3
+  -> pixel_shuffle_wrapper
+  -> output_buffer</pre>
+
+      <p>
+        PixelShuffle 應該放在 Conv1x1 之後，而且要在 Conv1x1 的 requantization 之後，
+        因為 PixelShuffle 只負責重新排列資料，不應該同時改變數值。這樣每一段都可以分開比對 golden result。
+      </p>
+    </section>
+
+    <section>
+      <h2>6. control flow 建議</h2>
+      <pre>IDLE
+  等待 start
+
+CHECK_PARAM
+  確認 input shape、weight loaded、quant parameter loaded
+
+RUN_CONV3X3
+  掃描 input H x W，產生 Conv1 output
+
+DRAIN_CONV3X3
+  等待 MAC pipeline valid 清完
+
+RUN_CONV1X1
+  掃描 mid feature H x W x 8，產生 4-channel sub-pixel tensor
+
+RUN_PIXEL_SHUFFLE
+  啟動既有 PixelShuffle wrapper，輸出 2H x 2W
+
+DONE
+  拉高 done，等待 PS 或 testbench 清 start</pre>
+
+      <p>
+        第一版 FSM 不追求最高效率。重點是每個 state 的責任單一、valid 訊號容易追，
+        debug waveform 好看。
+      </p>
+    </section>
+
+    <section>
+      <h2>7. 目前結論</h2>
+      <div class="decision">
+        <p>
+          最小功能階段建議：使用動態尺寸 TFLite 當 golden 來源，但 RTL 先固定小 patch 尺寸。
+        </p>
+        <p>
+          權重、bias、scale、zero point 完全從同一個 TFLite 匯出，不要混用固定尺寸版和動態尺寸版。
+          等 sr_core 的 Conv / Quant / PixelShuffle 都通過小 patch 驗證後，再切換到固定尺寸版做完整影像部署測試。
+        </p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

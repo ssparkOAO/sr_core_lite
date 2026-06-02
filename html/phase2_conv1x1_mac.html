@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase2 Conv3 1x1 MAC</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>Phase2 Conv3 1x1 MAC</h1>
+      <p class="small">位置：<code>model_lite/sr_core/html/phase2_conv1x1_mac.html</code></p>
+      <p class="small">詳細 RTL 紀錄：<a href="rtl/phase2_conv1x1_mac.html">rtl/phase2_conv1x1_mac.html</a></p>
+      <p class="small">回到主頁：<a href="index.html">SR Core 專案首頁</a></p>
+      <p>
+        這是 Phase2 的入口頁。詳細的 Conv3 layer 1x1 MAC 原理、memory mapping、
+        RTL datapath 與 testbench 驗證紀錄，放在 RTL 專區頁面。
+      </p>
+    </header>
+
+    <section>
+      <h2>重點提醒</h2>
+      <div class="warn">
+        <p>
+          <code>Conv3</code> 是 layer 名稱，kernel 是 <code>1x1</code>。
+          <code>Conv1</code> 才是前面的 <code>3x3</code> kernel layer。
+        </p>
+      </div>
+
+      <p>目前驗證目標：</p>
+      <pre>conv1_out_int8
+  -> sr_conv1x1_cin8_cout4_mac
+  -> conv3_acc_int32</pre>
+
+      <p>目前結果：</p>
+      <div class="decision">
+        <pre>mismatch count = 0
+max abs diff   = 0
+PASS</pre>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

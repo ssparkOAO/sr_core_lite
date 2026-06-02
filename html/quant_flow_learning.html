@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>量化推論 Data Flow 學習紀錄</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>量化推論 Data Flow 學習紀錄</h1>
+      <p class="small">主題：bias dtype、requantization、CNN classification 的 PS/PL 分層流程</p>
+      <p class="small">回到：<a href="index.html">SR Core 最小功能設計紀錄</a></p>
+    </header>
+
+    <section>
+      <h2>1. 這次學到的核心觀念</h2>
+      <div class="decision">
+        <p>
+          int8 TFLite 部署到硬體時，不是每一層都還原成 float，再重新量化。
+          正確概念是：每一層 Conv 先產生 int32 accumulation，接著做 requantization，
+          把 int32 轉成下一層要吃的 int8 activation。
+        </p>
+      </div>
+      <pre>uint8 image
+  → input preprocessing / quantization
+  → int8 activation
+  → Conv MAC: int8 input * int8 weight
+  → int32 accumulation
+  → add int32 bias
+  → requantization: int32 → int8
+  → next layer input int8</pre>
+      <p>
+        所以「量化還原」比較容易讓人誤會。硬體裡真正需要的是
+        <strong>requantization</strong>，也就是把一層的 int32 計算結果轉回另一個 int8 scale。
+      </p>
+    </section>
+
+    <section>
+      <h2>2. Bias 不是 int8，而是 int32</h2>
+      <p>
+        已確認 <code>ref/cnn_classfication/CNN_training/models/weights.pkl</code>：
+        Conv 和 Dense 的 weight 是 <code>int8</code>，bias 是 <code>int32</code>。
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>資料</th>
+            <th>dtype</th>
+            <th>原因</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>input activation</td>
+            <td><code>int8</code> 或模型輸入可能是 <code>uint8</code></td>
+            <td>節省資料量，符合 TFLite quantized tensor。</td>
+          </tr>
+          <tr>
+            <td>weight</td>
+            <td><code>int8</code></td>
+            <td>Conv 使用 int8 乘法。</td>
+          </tr>
+          <tr>
+            <td>MAC accumulation</td>
+            <td><code>int32</code></td>
+            <td>很多個 int8 乘積相加，必須用更寬的位元避免溢位。</td>
+          </tr>
+          <tr>
+            <td>bias</td>
+            <td><code>int32</code></td>
+            <td>bias 要加在 int32 accumulation 尺度，因此不是 int8。</td>
+          </tr>
+          <tr>
+            <td>layer output</td>
+            <td><code>int8</code></td>
+            <td>經過 requantization 後，提供給下一層。</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        Bias 的 scale 通常是：
+      </p>
+      <pre>bias_scale = input_scale * weight_scale</pre>
+      <p>
+        因此 bias 放在 int32 accumulation domain 裡最合理。
+      </p>
+    </section>
+
+    <section>
+      <h2>3. 一層 Conv 的量化公式</h2>
+      <p>
+        硬體 MAC 常先算：
+      </p>
+      <pre>acc = sum(q_input * q_weight)</pre>
+      <p>
+        但 TFLite 的真實數學關係是：
+      </p>
+      <pre>real_input  = input_scale  * (q_input - input_zero_point)
+real_weight = weight_scale * q_weight
+real_output = output_scale * (q_output - output_zero_point)</pre>
+      <p>
+        所以 requantization 要做：
+      </p>
+      <pre>q_output =
+  round((acc - input_zero_point * sum(weight) + bias)
+        * input_scale * weight_scale / output_scale)
+  + output_zero_point</pre>
+      <p>
+        為了讓 RTL 不使用浮點數，可以預先產生 <code>M0</code> 和 <code>M1</code>：
+      </p>
+      <pre>M0 = floor((input_scale * weight_scale / output_scale) * 2^32)
+M1 = M0 * (bias - input_zero_point * sum(weight)) + (output_zero_point << 32)
+
+tmp   = M0 * acc + M1
+q_out = round(tmp / 2^32)
+q_out = clamp(q_out, -128, 127)</pre>
+    </section>
+
+    <section>
+      <h2>4. CNN Classification 的 PS/PL 流程</h2>
+      <p>
+        <code>cnn_classfication</code> 參考專案裡要分成兩種理解方式。
+      </p>
+
+      <h3>4.1 Python / PS 分層控制版本</h3>
+      <p>
+        在 <code>CNN_training/library/inference_hardware.py</code> 的流程裡，
+        PL 主要負責算 Conv / FC 的 int32 accumulation，PS/Python 再做 requantization。
+      </p>
+      <pre>PS:
+  image resize / grayscale
+  uint8 image → int8 input，例如 image - 128
+  DMA send int8 activation
+
+PL:
+  讀 int8 activation
+  讀 int8 weight
+  做 MAC
+  回傳 int32 accumulation
+
+PS:
+  DMA recv int32 accumulation
+  用 M0/M1 做 requantization
+  int32 → int8
+  把 int8 output 當下一層 input
+  再啟動下一層 PL 計算</pre>
+      <p>
+        這種方式的優點是容易驗證。缺點是每一層都要 PS/PL 來回一次，效能比較差。
+      </p>
+
+      <h3>4.2 完整 RTL Network 版本</h3>
+      <p>
+        在 <code>LAB/Lab_final/.../new</code> 裡，可以看到某些 RTL module 已經把
+        requantization 和 clamp 寫在 PL 內，例如 <code>ConV1.v</code>、<code>FC_2.v</code>。
+      </p>
+      <pre>PL:
+  Conv MAC int32
+  M0/M1 fixed-point requantization
+  clamp to int8
+  寫入內部 activation buffer
+  下一層直接讀 int8 activation</pre>
+      <p>
+        這種方式比較接近最終部署，但 RTL 複雜度較高，也比較不好第一時間 debug。
+      </p>
+    </section>
+
+    <section>
+      <h2>5. 對 SR Core 的設計啟發</h2>
+      <p>
+        對目前的 Super Resolution 小模型來說，建議採取逐步策略。
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>階段</th>
+            <th>做法</th>
+            <th>目的</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>驗證階段</td>
+            <td>PL 可先只輸出 int32 acc，PS/Python 做 requant。</td>
+            <td>確認 MAC、window、weight 排列、zero point 修正都正確。</td>
+          </tr>
+          <tr>
+            <td>Core 完整階段</td>
+            <td>把 int32 bias、M0/M1 requant、clamp 放進 PL。</td>
+            <td>讓 Conv1 output 直接成為 Conv3 input。</td>
+          </tr>
+          <tr>
+            <td>模型整合階段</td>
+            <td>Conv1 → ReLU → Conv3 → PixelShuffle 全部在 PL pipeline 裡串起來。</td>
+            <td>減少 PS/PL 來回，接近最終 FPGA 推論。</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        最終 SR core 內部資料流應該是：
+      </p>
+      <pre>input int8
+  → Conv3x3 MAC int32
+  → add int32 bias
+  → M0/M1 requant int32 to int8
+  → ReLU / clamp
+  → Conv1x1 MAC int32
+  → add int32 bias
+  → M0/M1 requant int32 to int8
+  → PixelShuffle
+  → output int8 / uint8</pre>
+    </section>
+
+    <section>
+      <h2>6. 本專案目前採用的學習路線</h2>
+      <div class="note">
+        <p>
+          先用 PS/Python 做 requantization 來學清楚數學與資料流，再把 requantization 搬進 PL。
+          這樣比較容易知道錯誤是在 MAC、bias、scale、rounding、clamp，還是 PixelShuffle mapping。
+        </p>
+      </div>
+      <pre>Step 1: Python extractor 產生 weight / bias / M0 / M1
+Step 2: Python golden 產生每層 intermediate tensor
+Step 3: RTL 先驗證單層 MAC
+Step 4: RTL 加入 bias + requant
+Step 5: RTL 串接 Conv1 / Conv3 / PixelShuffle</pre>
+    </section>
+  </main>
+</body>
+</html>

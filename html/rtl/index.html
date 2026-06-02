@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>SR Core RTL 專案進度</title>
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="../index.html">SR Core 首頁</a>
+      <a href="index.html">RTL Modules</a>
+      <a href="../RTL_sys_index.html">RTL_sys</a>
+      <a href="../phase8_index.html">Phase8</a>
+      <a href="../tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>SR Core RTL 專案進度</h1>
+      <p class="small">位置：<code>model_lite/sr_core/html/rtl/index.html</code></p>
+      <p class="small">回到主頁：<a href="../index.html">SR Core 專案首頁</a></p>
+      <p class="small">Phase1 學習頁：<a href="sr_requantize.html">sr_requantize.html</a></p>
+      <p class="small">Phase2 學習頁：<a href="phase2_conv1x1_mac.html">phase2_conv1x1_mac.html</a></p>
+      <p class="small">Phase2.5 block 紀錄：<a href="../phase2_5_conv3_block.html">phase2_5_conv3_block.html</a></p>
+      <p class="small">Phase3 PixelShuffle：<a href="../phase3_pixel_shuffle_transaction_core.html">phase3_pixel_shuffle_transaction_core.html</a></p>
+      <p class="small">Phase4 Conv1 3x3 MAC：<a href="../phase4_conv1_3x3_mac.html">phase4_conv1_3x3_mac.html</a></p>
+      <p class="small">Phase4.5 Conv1 full block：<a href="../phase4_5_conv1_full_block.html">phase4_5_conv1_full_block.html</a></p>
+      <p class="small">Phase5 Output Clip：<a href="../phase5_output_clip.html">phase5_output_clip.html</a></p>
+      <p class="small">Phase6 Output Stage：<a href="../phase6_output_stage.html">phase6_output_stage.html</a></p>
+      <p class="small">Phase7 SR Core Top：<a href="../phase7_sr_core_top.html">phase7_sr_core_top.html</a></p>
+      <p>
+        目前這個專案是在做 <strong>runtime-verified quantized SR accelerator RTL</strong>。
+        也就是把已經完成 QAT 並轉成 TFLite INT8 的 Super Resolution 模型，
+        逐步實作成 FPGA / RTL 的 quantized inference core。
+      </p>
+    </header>
+
+    <section>
+      <h2>Phase7 最新進度</h2>
+      <div class="decision">
+        <p>
+          Phase7 <code>sr_core_top</code> 已建立並 verified。
+          目前 top 採用 Verification-Oriented Top + stage memory bridge，
+          完整 flow 為 Conv1 -> feature_mem0 -> Conv3 -> feature_mem1 ->
+          PixelShuffle -> feature_mem2 -> OutputStage -> output_uint8。
+        </p>
+        <pre>mismatch count = 0
+max abs diff   = 0
+PASS</pre>
+      </div>
+    </section>
+
+    <section>
+      <h2>1. 目前模型狀態</h2>
+      <p>目前模型：</p>
+      <pre>Bilinear_PP_v5_test_qat.tflite</pre>
+
+      <p>模型資料流：</p>
+      <pre>input_uint8
+  -> QUANTIZE
+  -> input_int8_for_core
+  -> Conv1 3x3 (Cin=1, Cout=8)
+  -> Requant + ReLU
+  -> Conv3 1x1 (Cin=8, Cout=4)
+  -> Requant
+  -> PixelShuffle x2
+  -> output_uint8</pre>
+
+      <div class="warn">
+        <p>
+          命名注意：<code>Conv1</code> 是模型中的第一個 convolution layer，
+          它的 kernel 是 <code>3x3</code>。<code>Conv3</code> 是模型後面的 convolution layer，
+          它的 kernel 是 <code>1x1</code>。所以 <code>conv3</code> 這個名字不是代表 3x3 kernel。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. 目前已完成事項</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>項目</th>
+            <th>狀態</th>
+            <th>說明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>TFLite INT8 model</td>
+            <td>已完成</td>
+            <td>模型已完成 QAT，並轉成 TFLite INT8。</td>
+          </tr>
+          <tr>
+            <td>參數抽取</td>
+            <td>已完成</td>
+            <td>已抽出 weight、bias、scale、zero point、M0、M1。</td>
+          </tr>
+          <tr>
+            <td>runtime verification</td>
+            <td>已完成</td>
+            <td>NumPy reconstructed quantized flow 與真實 TensorFlow Lite runtime bit-exact match，目前 diff = 0。</td>
+          </tr>
+          <tr>
+            <td>完整 golden</td>
+            <td>已完成</td>
+            <td>後續 RTL 可以直接拿 golden 做逐層 compare。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>2.1 已產生的參數檔</h3>
+      <pre>generated/
+  conv1_weight.mem
+  conv1_m0.mem
+  conv1_m1.mem
+  conv3_weight.mem
+  conv3_m0.mem
+  conv3_m1.mem</pre>
+
+      <h3>2.2 已產生的 golden 檔</h3>
+      <pre>generated/golden/
+  input_int8_for_core.mem
+  conv1_acc_int32.mem
+  conv1_out_int8.mem
+  conv3_acc_int32.mem
+  conv3_out_int8.mem
+  pixel_shuffle_out_int8.mem
+  output_uint8.mem</pre>
+
+      <div class="decision">
+        <p>
+          重點結論：目前 golden 是可信的。因為 Python reconstructed quantized flow
+          已經和 TFLite runtime 完全一致，所以 RTL 不需要再猜數學行為，
+          可以直接用這些 golden 檔逐 module 驗證。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>3. 目前專案策略</h2>
+      <p>目前不做：</p>
+      <pre>AXI
+DMA
+PS-PL
+full SoC integration
+runtime camera input</pre>
+
+      <p>目前專案階段：</p>
+      <div class="decision">
+        <p><strong>純 PL / RTL quantized compute core verification</strong></p>
+      </div>
+
+      <p>
+        現在的重點是逐層 module verification，不是一次完成 whole accelerator。
+        這樣可以把 arithmetic、dataflow、buffer mapping 分開確認，
+        每一關都用 runtime-verified golden 做 bit-exact compare。
+      </p>
+    </section>
+
+    <section>
+      <h2>4. 最終 RTL 規劃</h2>
+      <p>最終 RTL SR Core 的資料流：</p>
+      <pre>input_int8_for_core
+  -> Conv1 3x3 MAC
+  -> Requant + ReLU
+  -> Conv3 1x1 MAC
+  -> Requant
+  -> PixelShuffle
+  -> output_uint8</pre>
+
+      <p>規劃 RTL modules：</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Module</th>
+            <th>功能</th>
+            <th>目前狀態</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>sr_window_3x3</code></td>
+            <td>產生 Conv1 需要的 3x3 window。</td>
+            <td>Phase4 已完成 <code>sr_window_3x3_cin1</code></td>
+          </tr>
+          <tr>
+            <td><code>sr_conv3x3_cin1_cout8_mac</code></td>
+            <td>Conv1 3x3 MAC，Cin=1，Cout=8。</td>
+            <td>Phase4 已完成，conv1_acc_int32 PASS</td>
+          </tr>
+          <tr>
+            <td><code>sr_requantize</code></td>
+            <td>fixed-point requantization arithmetic。</td>
+            <td>已完成第一版，Conv3 layer 1x1 output requant PASS</td>
+          </tr>
+          <tr>
+            <td><code>sr_activation_relu_int8</code></td>
+            <td>Conv1 requant 後的 int8 ReLU。</td>
+            <td>待做</td>
+          </tr>
+          <tr>
+            <td><code>sr_conv1x1_cin8_cout4_mac</code></td>
+            <td>Conv3 layer 的 1x1 MAC，Cin=8，Cout=4。</td>
+            <td>已完成第一版，Conv3 layer 1x1 MAC PASS</td>
+          </tr>
+          <tr>
+            <td><code>pixel_shuffle_core</code></td>
+            <td>產生 PixelShuffle x2 write transaction。</td>
+            <td>已完成 transaction core，pixel_shuffle_out_int8 PASS</td>
+          </tr>
+          <tr>
+            <td><code>sr_core_top</code></td>
+            <td>整合各 module，形成完整 SR compute core。</td>
+            <td>待做</td>
+          </tr>
+          <tr>
+            <td><code>sr_output_stage</code></td>
+            <td>Final output formatting: signed int8 clip + uint8 conversion。</td>
+            <td>Phase6 已完成，output_uint8 PASS</td>
+          </tr>
+          <tr>
+            <td><code>sr_output_clip</code></td>
+            <td>PixelShuffle 後的 signed int8 output range constraint。</td>
+            <td>Phase5 已完成，clamp cases PASS</td>
+          </tr>
+          <tr>
+            <td><code>sr_conv1_3x3_cin1_cout8_block</code></td>
+            <td>Conv1 3x3 window + MAC + 8x sr_requantize。</td>
+            <td>Phase4.5 已完成，conv1_out_int8 PASS</td>
+          </tr>
+          <tr>
+            <td><code>sr_conv1x1_cin8_cout4_block</code></td>
+            <td>Conv3 layer 1x1 MAC + 4 個 sr_requantize。</td>
+            <td>已完成第一版，conv3_out_int8 PASS</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>5. 目前開發策略</h2>
+      <pre>由小到大
+先 arithmetic，再 dataflow
+先 module，再 top</pre>
+
+      <p>
+        原因是目前 golden 已完整，所以最適合逐 module 與 golden compare。
+        先確認每個小 module 都 bit-exact，再逐步往 dataflow 和 top-level 整合。
+      </p>
+    </section>
+
+    <section>
+      <h2>6. 目前階段</h2>
+      <div class="decision">
+        <p>
+          目前 Phase1、Phase2、Phase2.5、Phase3、Phase4、Phase4.5、Phase5、Phase6 都已完成並 verified。
+          最新完成的是 Phase6：
+          <strong><code>sr_output_stage</code></strong>，
+          也就是 PixelShuffle 後的 final output formatting stage。
+        </p>
+      </div>
+
+      <h3>6.1 Phase 進度表</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Phase</th>
+            <th>Module / Block</th>
+            <th>驗證目標</th>
+            <th>結果</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Phase1</td>
+            <td><code>sr_requantize</code></td>
+            <td><code>conv3_acc_int32 -> conv3_out_int8</code> 的 TFLite-style requant arithmetic。</td>
+            <td>PASS，mismatch count = 0</td>
+          </tr>
+          <tr>
+            <td>Phase2</td>
+            <td><code>sr_conv1x1_cin8_cout4_mac</code></td>
+            <td><code>conv1_out_int8 -> conv3_acc_int32</code> 的 signed int8 1x1 MAC。</td>
+            <td>PASS，mismatch count = 0</td>
+          </tr>
+          <tr>
+            <td>Phase2.5</td>
+            <td><code>sr_conv1x1_cin8_cout4_block</code></td>
+            <td><code>conv1_out_int8 -> MAC -> requant -> conv3_out_int8</code>。</td>
+            <td>PASS，mismatch count = 0</td>
+          </tr>
+          <tr>
+            <td>Phase3</td>
+            <td><code>pixel_shuffle_core</code></td>
+            <td><code>conv3_out_int8 -> write transactions -> fake memory -> pixel_shuffle_out_int8</code>。</td>
+            <td>PASS，mismatch count = 0</td>
+          </tr>
+          <tr>
+            <td>Phase4</td>
+            <td><code>sr_window_3x3_cin1</code> + <code>sr_conv3x3_cin1_cout8_mac</code></td>
+            <td><code>input_int8_for_core -> window -> Conv1 3x3 MAC -> conv1_acc_int32</code>。</td>
+            <td>PASS，mismatch count = 0</td>
+          </tr>
+          <tr>
+            <td>Phase4.5</td>
+            <td><code>sr_conv1_3x3_cin1_cout8_block</code></td>
+            <td><code>input_int8_for_core -> Conv1 block -> conv1_out_int8</code>。</td>
+            <td>PASS，mismatch count = 0</td>
+          </tr>
+          <tr>
+            <td>Phase5</td>
+            <td><code>sr_output_clip</code></td>
+            <td><code>PixelShuffle -> output clip -> final uint8 conversion</code> 前的 range constraint。</td>
+            <td>PASS，mismatch count = 0</td>
+          </tr>
+          <tr>
+            <td>Phase6</td>
+            <td><code>sr_output_stage</code></td>
+            <td><code>pixel_shuffle_out_int8 -> output stage -> output_uint8</code>。</td>
+            <td>PASS，mismatch count = 0</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <p>Phase6 這一階段先不做：</p>
+      <pre>Conv
+PixelShuffle mapping
+AXI
+DMA
+BRAM IP
+optimization pipeline
+systolic architecture</pre>
+
+      <p>
+        Phase6 驗證 final output stage。
+        它把 signed int8 tensor 透過 output clip 和 zero-point recovery
+        轉成 uint8 image domain。
+      </p>
+
+      <p>
+        Phase6 詳細 signed int8 domain、uint8 image domain、zero_point=-128 和 golden verification 放在：
+        <a href="../phase6_output_stage.html">phase6_output_stage.html</a>
+      </p>
+    </section>
+
+    <section>
+      <h2>7. 目前 PASS 條件</h2>
+      <p>目前專案真正目標是先確認：</p>
+      <pre>Final output_uint8
+matches runtime-verified TFLite golden</pre>
+
+      <p>目前這一關的 PASS 條件：</p>
+      <div class="decision">
+        <pre>RTL output == generated/golden/output_uint8.mem
+mismatch count = 0
+max abs diff   = 0</pre>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

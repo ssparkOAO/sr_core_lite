@@ -1,0 +1,15 @@
+sr_output_clip verification result
+==================================================
+Purpose : output range constraint, not standalone ReLU
+Clamp   : signed int8 range [-128, 127]
+
+input=-128 output=-128 expected=-128
+input=-64 output=-64 expected=-64
+input=0 output=0 expected=0
+input=64 output=64 expected=64
+input=127 output=127 expected=127
+input=200 output=127 expected=127
+input=-200 output=-128 expected=-128
+
+mismatch count = 0
+PASS

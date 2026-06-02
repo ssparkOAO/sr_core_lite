@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase8.3 Vivado BRAM GUI Notes</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>Phase8.3 Vivado BRAM GUI 操作紀錄</h1>
+      <p class="small">文件位置：<code>model_lite/sr_core/html/phase8_3_vivado_bram_gui.html</code></p>
+      <p>
+        這份文件專門記錄 Vivado GUI 如何重建 Phase8.3 的 Block Memory Generator ROM IP。
+        目標是未來只看這份文件，就能用 GUI 做出和 Tcl 相同的 IP 設定。
+      </p>
+    </header>
+
+    <section>
+      <h2>步驟1：IP Catalog</h2>
+      <pre>Vivado
+    ↓
+IP Catalog
+    ↓
+Block Memory Generator</pre>
+      <table>
+        <thead>
+          <tr>
+            <th>GUI 選項</th>
+            <th>實際選擇值</th>
+            <th>為什麼選這個值</th>
+            <th>對應 Tcl</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>IP</td>
+            <td>Block Memory Generator</td>
+            <td>用 Xilinx 官方 IP 產生 BRAM/ROM，之後比較容易接近 Vivado deployment flow。</td>
+            <td><code>create_ip -name blk_mem_gen -vendor xilinx.com -library ip</code></td>
+          </tr>
+          <tr>
+            <td>Project</td>
+            <td><code>sr_core_bram_pynqz2</code></td>
+            <td>把 BRAM prototype 和原本 verified RTL 分開，避免污染 <code>RTL/</code> golden version。</td>
+            <td><code>create_project sr_core_bram_pynqz2 ... -part xc7z020clg400-1</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>步驟2：Customize IP 共通設定</h2>
+      <p>六個參數 IP 都使用同一類型的 ROM 設定，只是 width/depth/COE 不同。</p>
+      <table>
+        <thead>
+          <tr>
+            <th>GUI 選項</th>
+            <th>實際選擇值</th>
+            <th>為什麼選這個值</th>
+            <th>對應 Tcl</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Memory Type</td>
+            <td>Single Port ROM</td>
+            <td>目前 weight/M0/M1 是固定參數，只需要讀，不需要 runtime 寫入。</td>
+            <td><code>set_property CONFIG.Memory_Type {Single_Port_ROM}</code></td>
+          </tr>
+          <tr>
+            <td>Port Type</td>
+            <td>Native / Port A</td>
+            <td>目前只需要簡單 address/read data 介面，不引入 AXI 或 controller。</td>
+            <td>BMG native port default</td>
+          </tr>
+          <tr>
+            <td>Enable Port Type</td>
+            <td>Use ENA Pin</td>
+            <td>保留 read enable，未來 controller 可以明確控制何時讀參數；若要 always read，可直接把 <code>ena</code> 接 <code>1'b1</code>。</td>
+            <td><code>set_property CONFIG.Enable_A {Use_ENA_Pin}</code></td>
+          </tr>
+          <tr>
+            <td>Load Init File</td>
+            <td>true</td>
+            <td>讓 BRAM ROM 直接由 COE 初始化，符合目前固定參數 prototype。</td>
+            <td><code>set_property CONFIG.Load_Init_File {true}</code></td>
+          </tr>
+          <tr>
+            <td>COE File</td>
+            <td><code>generated_vivado_hex/*.coe</code></td>
+            <td>用 fixed-width two's-complement hex 保存 signed parameter bit pattern，並集中管理 Vivado 用初始化檔。</td>
+            <td><code>set_property CONFIG.Coe_File {...}</code></td>
+          </tr>
+          <tr>
+            <td>Output Register</td>
+            <td>disabled</td>
+            <td>先減少額外 latency，讓 prototype timing 較容易對照。未來若要提高 Fmax 可再打開。</td>
+            <td><code>CONFIG.Register_PortA_Output_of_Memory_Primitives false</code></td>
+          </tr>
+          <tr>
+            <td>Reset Port</td>
+            <td>disabled</td>
+            <td>ROM read data 不需要另外 reset，避免多餘控制腳位。</td>
+            <td><code>set_property CONFIG.Use_RSTA_Pin {false}</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>步驟3：各 IP 的 Width / Depth</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>IP 名稱</th>
+            <th>Read Width</th>
+            <th>Read Depth</th>
+            <th>COE</th>
+            <th>為什麼這樣配置</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>conv1_weight_rom</code></td>
+            <td>8</td>
+            <td>72</td>
+            <td><code>generated_vivado_hex/conv1_weight.coe</code></td>
+            <td>Conv1 是 8 個 output channel，每個 channel 有 3x3 共 9 個 weight，所以 8*9=72。</td>
+          </tr>
+          <tr>
+            <td><code>conv3_weight_rom</code></td>
+            <td>8</td>
+            <td>32</td>
+            <td><code>generated_vivado_hex/conv3_weight.coe</code></td>
+            <td>Conv3 是 4 個 output channel，每個 output channel 讀 8 個 input channel weight，所以 4*8=32。</td>
+          </tr>
+          <tr>
+            <td><code>conv1_m0_rom</code></td>
+            <td>32</td>
+            <td>8</td>
+            <td><code>generated_vivado_hex/conv1_m0.coe</code></td>
+            <td>Conv1 有 8 個 output channel，每個 channel 一個 M0。</td>
+          </tr>
+          <tr>
+            <td><code>conv1_m1_rom</code></td>
+            <td>64</td>
+            <td>8</td>
+            <td><code>generated_vivado_hex/conv1_m1.coe</code></td>
+            <td>Conv1 每個 output channel 一個 64-bit M1。</td>
+          </tr>
+          <tr>
+            <td><code>conv3_m0_rom</code></td>
+            <td>32</td>
+            <td>4</td>
+            <td><code>generated_vivado_hex/conv3_m0.coe</code></td>
+            <td>Conv3 有 4 個 output channel，每個 channel 一個 M0。</td>
+          </tr>
+          <tr>
+            <td><code>conv3_m1_rom</code></td>
+            <td>64</td>
+            <td>4</td>
+            <td><code>generated_vivado_hex/conv3_m1.coe</code></td>
+            <td>Conv3 每個 output channel 一個 64-bit M1。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>步驟4：對應 Tcl 範例</h2>
+      <pre>create_ip -name blk_mem_gen -vendor xilinx.com -library ip -module_name conv1_weight_rom
+
+set_property -dict [list \
+  CONFIG.Memory_Type {Single_Port_ROM} \
+  CONFIG.Write_Width_A {8} \
+  CONFIG.Read_Width_A {8} \
+  CONFIG.Write_Depth_A {72} \
+  CONFIG.Load_Init_File {true} \
+  CONFIG.Coe_File {generated_vivado_hex/conv1_weight.coe} \
+  CONFIG.Enable_A {Use_ENA_Pin} \
+  CONFIG.Use_RSTA_Pin {false} \
+] [get_ips conv1_weight_rom]</pre>
+      <p>
+        實際 Tcl 寫在 <code>RTL_sys/phase8_3_vivado_bram/tcl/create_sr_core_bram_pynqz2.tcl</code>。
+        其中 <code>Load_Init_File</code> 和 <code>Coe_File</code> 要一起設定，避免 Vivado 在還沒有 COE 時先驗證失敗。
+      </p>
+    </section>
+
+    <section>
+      <h2>步驟5：Generate Output Products</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>GUI 選項</th>
+            <th>實際選擇值</th>
+            <th>為什麼選這個值</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Generate Output Products</td>
+            <td>Generate</td>
+            <td>產生 synthesis / simulation / instantiation template，讓 wrapper 可以 instantiate IP。</td>
+          </tr>
+          <tr>
+            <td>Global / Out-of-context</td>
+            <td>保持 Vivado 預設</td>
+            <td>目前只是 IP prototype，不先調整 OOC 策略。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>目前學到的重點</h2>
+      <div class="decision">
+        <p>
+          GUI 上看似只是填 width/depth/COE，但真正關鍵是：signed parameter 必須先轉成正確 bit pattern，
+          而且 BRAM read 是 synchronous timing。未來把它接回 CNN datapath 時，不能再用 reg array 的
+          combinational 直覺來看。
+        </p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

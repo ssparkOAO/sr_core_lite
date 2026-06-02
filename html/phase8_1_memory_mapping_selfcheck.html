@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase8.1 Weight Memory Self-Check</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>Phase8.1 Weight Memory Self-Check</h1>
+      <p class="small">文件位置：<code>model_lite/sr_core/html/phase8_1_memory_mapping_selfcheck.html</code></p>
+      <p class="small">返回：<a href="phase8_index.html">Phase8 完整紀錄</a></p>
+      <p>
+        Phase8.1 的任務是確認 memory-style organization 的 address mapping 是否正確。
+        這一步只驗 weight/M0/M1 memory readback，尚未接 <code>sr_core_top</code>。
+      </p>
+    </header>
+
+    <section>
+      <h2>1. 為什麼 Proposal 還不等於完成</h2>
+      <p>
+        <code>sr_weight_memory_arch_proposal.v</code> 只是 architecture draft。
+        它定義了 Conv1 weight、Conv3 weight、M0/M1 的 memory-style organization，
+        但還沒有證明 address mapping 和 <code>generated/*.mem</code> 完全一致。
+      </p>
+      <div class="warn">
+        <p>
+          如果 memory address 順序錯，即使 MAC、requant、PixelShuffle 都是正確的，
+          最終 output 仍然會 mismatch。因此 Phase8.1 先只驗 memory mapping，不混入其他 stage。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. 使用檔案</h2>
+      <pre>model_lite/sr_core/generated/conv1_weight.mem
+model_lite/sr_core/generated/conv3_weight.mem
+model_lite/sr_core/generated/conv1_m0.mem
+model_lite/sr_core/generated/conv1_m1.mem
+model_lite/sr_core/generated/conv3_m0.mem
+model_lite/sr_core/generated/conv3_m1.mem</pre>
+      <p>
+        這些檔案都是 signed decimal text，因此 testbench 使用 <code>$fopen</code> 與
+        <code>$fscanf</code> 載入，不使用 <code>$readmemh</code>。
+      </p>
+    </section>
+
+    <section>
+      <h2>3. 驗證方式</h2>
+      <pre>TB
+  -> read generated/*.mem as golden
+  -> load DUT internal memories by hierarchical assignment
+  -> drive address sequentially
+  -> read memory module output
+  -> compare output data with golden value</pre>
+      <p>
+        目前載入方式刻意使用 hierarchical assignment，例如
+        <code>dut_conv1_weight.conv1_weight_mem[i] = golden_value</code>。
+        這是為了先把驗證焦點鎖定在 mapping，不提前導入 BRAM IP 或 loader FSM。
+      </p>
+    </section>
+
+    <section>
+      <h2>4. Mapping 規則</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Memory</th>
+            <th>Address Rule</th>
+            <th>Count</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Conv1 weight</td>
+            <td><code>addr = output_channel * 9 + kernel_tap</code></td>
+            <td>72</td>
+          </tr>
+          <tr>
+            <td>Conv3 weight</td>
+            <td><code>addr = output_channel * 8 + input_channel</code></td>
+            <td>32</td>
+          </tr>
+          <tr>
+            <td>Conv1 M0/M1</td>
+            <td><code>addr = output_channel</code></td>
+            <td>8 each</td>
+          </tr>
+          <tr>
+            <td>Conv3 M0/M1</td>
+            <td><code>addr = output_channel</code></td>
+            <td>4 each</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>5. PASS 條件與結果</h2>
+      <div class="decision">
+        <pre>conv1_weight mismatch count = 0
+conv3_weight mismatch count = 0
+conv1_m0 mismatch count     = 0
+conv1_m1 mismatch count     = 0
+conv3_m0 mismatch count     = 0
+conv3_m1 mismatch count     = 0
+total mismatch count        = 0
+PASS</pre>
+      </div>
+      <p>輸出檔案：</p>
+      <pre>model_lite/sr_core/RTL_sys/phase8_weight_memory/
+  tb_sr_weight_memory_arch_proposal.v
+  tb_sr_weight_memory_arch_proposal_result.txt</pre>
+    </section>
+
+    <section>
+      <h2>6. 目前尚未做的事</h2>
+      <pre>尚未接 sr_core_top
+尚未做 memory-oriented wrapper
+尚未導入 BRAM IP
+尚未導入 AXI / DMA / PS-PL</pre>
+      <p>
+        下一步 Phase8.2 會建立 Memory-Oriented Top Wrapper，
+        在不修改 verified RTL 的情況下，把 weight/M0/M1 收進 wrapper internal memory。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,81 @@
+Phase8.4 Parameter ROM IP Configuration Report
+Project: C:/M11413047/codex/final_proj/model_lite/sr_core/vivado/sr_core_bram_pynqz2/sr_core_bram_pynqz2.xpr
+
+IP: conv1_weight_rom
+  Memory_Type = Single_Port_ROM
+  Write_Width_A = 8
+  Read_Width_A = 8
+  Write_Depth_A = 72
+  Enable_A = Use_ENA_Pin
+  Register_PortA_Output_of_Memory_Primitives = false
+  Register_PortA_Output_of_Memory_Core = false
+  Load_Init_File = true
+  Coe_File = ../../../../../../generated_vivado_hex/conv1_weight.coe
+  Address_Width_Calculated = 7
+  Read_Latency_Interpretation = 1 clock from synchronous ROM memory primitive
+
+IP: conv3_weight_rom
+  Memory_Type = Single_Port_ROM
+  Write_Width_A = 8
+  Read_Width_A = 8
+  Write_Depth_A = 32
+  Enable_A = Use_ENA_Pin
+  Register_PortA_Output_of_Memory_Primitives = false
+  Register_PortA_Output_of_Memory_Core = false
+  Load_Init_File = true
+  Coe_File = ../../../../../../generated_vivado_hex/conv3_weight.coe
+  Address_Width_Calculated = 5
+  Read_Latency_Interpretation = 1 clock from synchronous ROM memory primitive
+
+IP: conv1_m0_rom
+  Memory_Type = Single_Port_ROM
+  Write_Width_A = 32
+  Read_Width_A = 32
+  Write_Depth_A = 8
+  Enable_A = Use_ENA_Pin
+  Register_PortA_Output_of_Memory_Primitives = false
+  Register_PortA_Output_of_Memory_Core = false
+  Load_Init_File = true
+  Coe_File = ../../../../../../generated_vivado_hex/conv1_m0.coe
+  Address_Width_Calculated = 3
+  Read_Latency_Interpretation = 1 clock from synchronous ROM memory primitive
+
+IP: conv1_m1_rom
+  Memory_Type = Single_Port_ROM
+  Write_Width_A = 64
+  Read_Width_A = 64
+  Write_Depth_A = 8
+  Enable_A = Use_ENA_Pin
+  Register_PortA_Output_of_Memory_Primitives = false
+  Register_PortA_Output_of_Memory_Core = false
+  Load_Init_File = true
+  Coe_File = ../../../../../../generated_vivado_hex/conv1_m1.coe
+  Address_Width_Calculated = 3
+  Read_Latency_Interpretation = 1 clock from synchronous ROM memory primitive
+
+IP: conv3_m0_rom
+  Memory_Type = Single_Port_ROM
+  Write_Width_A = 32
+  Read_Width_A = 32
+  Write_Depth_A = 4
+  Enable_A = Use_ENA_Pin
+  Register_PortA_Output_of_Memory_Primitives = false
+  Register_PortA_Output_of_Memory_Core = false
+  Load_Init_File = true
+  Coe_File = ../../../../../../generated_vivado_hex/conv3_m0.coe
+  Address_Width_Calculated = 2
+  Read_Latency_Interpretation = 1 clock from synchronous ROM memory primitive
+
+IP: conv3_m1_rom
+  Memory_Type = Single_Port_ROM
+  Write_Width_A = 64
+  Read_Width_A = 64
+  Write_Depth_A = 4
+  Enable_A = Use_ENA_Pin
+  Register_PortA_Output_of_Memory_Primitives = false
+  Register_PortA_Output_of_Memory_Core = false
+  Load_Init_File = true
+  Coe_File = ../../../../../../generated_vivado_hex/conv3_m1.coe
+  Address_Width_Calculated = 2
+  Read_Latency_Interpretation = 1 clock from synchronous ROM memory primitive
+

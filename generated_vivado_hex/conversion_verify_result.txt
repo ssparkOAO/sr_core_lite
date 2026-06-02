@@ -1,0 +1,25 @@
+generated_vivado_hex conversion summary
+source=C:\M11413047\codex\final_proj\model_lite\sr_core\generated
+output=C:\M11413047\codex\final_proj\model_lite\sr_core\generated_vivado_hex
+
+file=conv1_bias.mem width=32 signed=True values=8 mismatch=0
+file=conv1_m0.mem width=32 signed=True values=8 mismatch=0
+file=conv1_m1.mem width=64 signed=True values=8 mismatch=0
+file=conv1_weight.mem width=8 signed=True values=72 mismatch=0
+file=conv3_bias.mem width=32 signed=True values=4 mismatch=0
+file=conv3_m0.mem width=32 signed=True values=4 mismatch=0
+file=conv3_m1.mem width=64 signed=True values=4 mismatch=0
+file=conv3_weight.mem width=8 signed=True values=32 mismatch=0
+file=golden/conv1_acc_int32.mem width=32 signed=True values=512 mismatch=0
+file=golden/conv1_out_int8.mem width=8 signed=True values=512 mismatch=0
+file=golden/conv3_acc_int32.mem width=32 signed=True values=256 mismatch=0
+file=golden/conv3_out_int8.mem width=8 signed=True values=256 mismatch=0
+file=golden/input_int8_for_core.mem width=8 signed=True values=64 mismatch=0
+file=golden/input_uint8.mem width=8 signed=False values=64 mismatch=0
+file=golden/output_uint8.mem width=8 signed=False values=256 mismatch=0
+file=golden/pixel_shuffle_out_int8.mem width=8 signed=True values=256 mismatch=0
+
+total files=16
+total values=2316
+total mismatch=0
+PASS

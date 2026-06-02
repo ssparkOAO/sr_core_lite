@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>SR TFLite Hardware Summary</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: "Microsoft JhengHei", "Noto Sans TC", Arial, sans-serif;
+      line-height: 1.7;
+      color: #20242a;
+      background: #f6f8fb;
+    }
+    .page {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 32px 24px 56px;
+    }
+    h1 { font-size: 30px; margin: 0 0 8px; }
+    h2 {
+      font-size: 22px;
+      margin-top: 28px;
+      border-left: 5px solid #2d7dd2;
+      padding-left: 12px;
+    }
+    p { margin: 10px 0; }
+    .note {
+      padding: 14px 16px;
+      background: #eef9f0;
+      border: 1px solid #b8dfbf;
+      border-radius: 8px;
+    }
+    code {
+      font-family: Consolas, "Courier New", monospace;
+      background: #eef1f5;
+      padding: 2px 5px;
+      border-radius: 4px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0 20px;
+      background: white;
+    }
+    th, td {
+      border: 1px solid #d8dee8;
+      padding: 9px 10px;
+      vertical-align: top;
+      text-align: left;
+    }
+    th { background: #e9eef5; }
+    pre {
+      overflow-x: auto;
+      background: #18202a;
+      color: #eef4fb;
+      padding: 16px;
+      border-radius: 8px;
+      line-height: 1.55;
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <h1>SR TFLite Hardware Summary</h1>
+    <p>這份摘要是給硬體設計閱讀的，不是給 Python 工具直接解析的。</p>
+    <p>來源模型：<code>C:\M11413047\codex\final_proj\model_lite\sr_core\tools\Bilinear_PP_v5_test_qat.tflite</code></p>
+
+    <h2>1. 目前硬體真正要做哪些 Layer</h2>
+    <div class="note">
+      <ul><li>conv1: 3x3 conv + bias + requant + fused ReLU</li><li>conv3: 1x1 conv + bias + requant</li><li>pixel_shuffle: Depth-to-Space scale=2</li><li>output_clip: MINIMUM + RELU can be merged as one output clamp block</li></ul>
+    </div>
+
+    <h2>2. 哪些不用做成獨立 Layer</h2>
+    <ul><li>No separate ReLU block after conv1 because it is fused into conv1.</li><li>Input QUANTIZE and final QUANTIZE are format conversion blocks, not convolution layers.</li></ul>
+
+    <h2>3. 建議 PL Pipeline</h2>
+    <ul><li><code>input_int8</code></li><li><code>conv1 (3x3) + requant + ReLU</code></li><li><code>conv3 (1x1) + requant</code></li><li><code>pixel shuffle</code></li><li><code>output clip</code></li><li><code>final uint8 format conversion</code></li></ul>
+
+    <h2>4. TFLite Operator 到硬體 Block 對照</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Stage</th>
+          <th>Name</th>
+          <th>TFLite Ops</th>
+          <th>Hardware Action</th>
+          <th>Where</th>
+          <th>Separate PL Layer</th>
+          <th>Note</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td>0</td><td><code>input_quantize</code></td><td>QUANTIZE</td><td>uint8 input to int8 input conversion</td><td>PS preferred, PL optional</td><td>No</td><td>This is input formatting, not a convolution layer.</td></tr><tr><td>1</td><td><code>conv1</code></td><td>CONV_2D</td><td>3x3 conv + bias + requant + ReLU</td><td>PL core</td><td>Yes</td><td>Conv1 output already includes fused ReLU in TFLite runtime.</td></tr><tr><td>2</td><td><code>conv3</code></td><td>CONV_2D</td><td>1x1 conv + bias + requant</td><td>PL core</td><td>Yes</td><td>This layer is plain convolution. No fused ReLU after conv3.</td></tr><tr><td>3</td><td><code>pixel_shuffle</code></td><td>DEPTH_TO_SPACE</td><td>scale=2 PixelShuffle / Depth-to-Space</td><td>PL core</td><td>Yes</td><td>Data rearrangement only. No multiplier and no MAC.</td></tr><tr><td>4</td><td><code>output_clip</code></td><td>MINIMUM, RELU</td><td>clip output to valid int8 range before final output quantize</td><td>PL preferred</td><td>Yes</td><td>MINIMUM with constant 127 then RELU. This is equivalent to clipped ReLU style output limiting.</td></tr><tr><td>5</td><td><code>output_quantize</code></td><td>QUANTIZE</td><td>int8 output to final uint8 output format conversion</td><td>PL or PS</td><td>No</td><td>This is final output formatting, not a MAC layer.</td></tr>
+      </tbody>
+    </table>
+
+    <h2>5. 直接回答目前模型要做什麼</h2>
+    <pre>Input uint8
+  -> input quantize / preprocessing
+  -> Conv1 3x3 + requant + fused ReLU
+  -> Conv3 1x1 + requant
+  -> PixelShuffle
+  -> output clip (MINIMUM + RELU)
+  -> final uint8 output</pre>
+  </main>
+</body>
+</html>

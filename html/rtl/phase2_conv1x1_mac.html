@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase2 Conv3 1x1 MAC 紀錄</title>
+  <link rel="stylesheet" href="../style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="../index.html">SR Core 首頁</a>
+      <a href="index.html">RTL Modules</a>
+      <a href="../RTL_sys_index.html">RTL_sys</a>
+      <a href="../phase8_index.html">Phase8</a>
+      <a href="../tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>Phase2 Conv3 1x1 MAC 紀錄</h1>
+      <p class="small">位置：<code>model_lite/sr_core/html/rtl/phase2_conv1x1_mac.html</code></p>
+      <p class="small">回到 RTL 進度：<a href="index.html">rtl/index.html</a></p>
+      <p>
+        本頁記錄 <code>sr_conv1x1_cin8_cout4_mac</code> 的目的、資料 mapping、
+        RTL datapath 寫法與 testbench 驗證方式。
+      </p>
+    </header>
+
+    <section>
+      <h2>1. 目前階段</h2>
+      <div class="decision">
+        <p>
+          Phase2 目前做的是 <strong>Conv3 layer 的 1x1 kernel MAC</strong>。
+          這裡的 <code>Conv3</code> 是 layer 名稱，不是 3x3 kernel。
+          <code>Conv1</code> 才是前面的 3x3 kernel layer。
+        </p>
+      </div>
+
+      <p>這一階段只驗證：</p>
+      <pre>conv1_out_int8
+  -> Conv3 1x1 MAC
+  -> conv3_acc_int32</pre>
+
+      <p>目前不要加入：</p>
+      <pre>M0
+M1
+requant
+clamp
+ReLU
+pipeline optimization
+streaming architecture</pre>
+    </section>
+
+    <section>
+      <h2>2. 數學公式</h2>
+      <p>對每個 output channel：</p>
+      <pre>acc[co] =
+    sum_{ci=0..7}
+        input[ci] * weight[co][ci]</pre>
+
+      <table>
+        <thead>
+          <tr>
+            <th>項目</th>
+            <th>設定</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Cin</td>
+            <td><code>8</code></td>
+          </tr>
+          <tr>
+            <td>Cout</td>
+            <td><code>4</code></td>
+          </tr>
+          <tr>
+            <td>activation</td>
+            <td>signed int8</td>
+          </tr>
+          <tr>
+            <td>weight</td>
+            <td>signed int8</td>
+          </tr>
+          <tr>
+            <td>accumulator</td>
+            <td>signed int32</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>3. RTL 檔案管理</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>檔案</th>
+            <th>用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>model_lite/sr_core/RTL/sr_conv1x1_cin8_cout4_mac/sr_conv1x1_cin8_cout4_mac.v</code></td>
+            <td>Conv3 1x1 MAC combinational RTL。</td>
+          </tr>
+          <tr>
+            <td><code>model_lite/sr_core/RTL/sr_conv1x1_cin8_cout4_mac/tb_sr_conv1x1_cin8_cout4_mac.v</code></td>
+            <td>Self-checking testbench。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>4. Datapath 風格</h2>
+      <p>
+        RTL 風格延續前面的 demo：明確 wire、明確 multiplier、明確 partial sum、
+        明確 final accumulation。這一版不是 systolic array，也沒有 PE reuse。
+      </p>
+
+      <pre>input channels
+  -> signed extension
+  -> mul00, mul01, ..., mul37
+  -> psum0a, psum0b, ...
+  -> acc0, acc1, acc2, acc3</pre>
+
+      <p>
+        權重使用明確 port：
+        <code>w00~w07</code> 屬於 output channel 0，
+        <code>w10~w17</code> 屬於 output channel 1，
+        <code>w20~w27</code> 屬於 output channel 2，
+        <code>w30~w37</code> 屬於 output channel 3。
+      </p>
+    </section>
+
+    <section>
+      <h2>5. Memory Mapping</h2>
+      <h3>5.1 Activation input</h3>
+      <p>
+        <code>conv1_out_int8.mem</code> shape 是 <code>(H,W,8)</code>，
+        flatten 後是 NHWC layout。每個 pixel 連續放 8 個 channel：
+      </p>
+      <pre>[c0,c1,c2,c3,c4,c5,c6,c7]</pre>
+
+      <h3>5.2 Conv3 weight</h3>
+      <p>
+        <code>conv3_weight.mem</code> shape 是 <code>[4,1,1,8]</code>，
+        flatten 後是 cout-major：
+      </p>
+      <pre>w00 w01 w02 w03 w04 w05 w06 w07
+w10 w11 w12 w13 w14 w15 w16 w17
+w20 w21 w22 w23 w24 w25 w26 w27
+w30 w31 w32 w33 w34 w35 w36 w37</pre>
+
+      <h3>5.3 Golden output  ( acc = Σ fmap x weight ) </h3>
+      <p>
+        <code>conv3_acc_int32.mem</code> shape 是 <code>(H,W,4)</code>。
+        每個 pixel 有 4 個 signed int32 accumulator：
+      </p>
+      <pre>[acc0,acc1,acc2,acc3]</pre>
+    </section>
+
+    <section>
+      <h2>6. Testbench 驗證</h2>
+      <p>Testbench 每次取一個 pixel 的 8-channel activation，送進 DUT 後比對 4 個 accumulator。</p>
+
+      <pre>for each pixel:
+    in_c0~in_c7 = conv1_out_int8[pixel]
+    acc0~acc3   = DUT output
+    compare with conv3_acc_int32[pixel]</pre>
+
+      <div class="warn">
+        <p>
+          目前這些 <code>.mem</code> 檔案內容是 signed decimal text，不是 hex。
+          所以 testbench 使用 <code>$fscanf(..., "%d")</code> 讀取。
+          這樣可以正確讀入負數，並保持和 golden 一致。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>7. Simulation Result</h2>
+      <div class="decision">
+        <pre>mismatch count = 0
+max abs diff   = 0
+PASS</pre>
+      </div>
+
+      <p>
+        這代表 Conv3 layer 的 1x1 signed int8 MAC 已經和
+        <code>conv3_acc_int32.mem</code> bit-exact 一致。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

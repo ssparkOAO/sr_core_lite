@@ -1,0 +1,12 @@
+sr_conv3x3_cin1_cout8_mac verification result
+==================================================
+Purpose : Conv1 3x3 window + MAC only
+Input   : input_int8_for_core.mem, shape (8,8,1)
+Weight  : conv1_weight.mem, shape [8,3,3,1]
+Golden  : conv1_acc_int32.mem, shape (8,8,8)
+Padding : PAD_VALUE = -128
+No bias, no requant, no clamp, no ReLU
+
+mismatch count = 0
+max abs diff   = 0
+PASS

@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SR Core 下一版部署 Roadmap</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>SR Core 下一版部署 Roadmap</h1>
+      <p class="small">紀錄位置：<code>model_lite/sr_core/html/deployment_roadmap.html</code></p>
+      <p class="small">參考方向：<code>ref/cnn_classfication</code> 的 PS/PL、AXI、DMA、BRAM/IP 部署架構</p>
+      <p>
+        目前 SR Core 已經完成 verification-oriented compute pipeline。
+        從這一頁開始，目標不再是「逐個 RTL module 驗證」，
+        而是規劃下一個版本：把已 verified 的 SR compute core 逐步演進成可部署到 FPGA 的 accelerator。
+      </p>
+    </header>
+
+    <section>
+      <h2>1. 現在已完成到哪裡</h2>
+      <p>
+        目前已完成的是 <strong>runtime-verified quantized SR compute core correctness</strong>。
+        也就是：TFLite INT8 golden 已可信，RTL 各 stage 和整體 top 都已經能對上 golden。
+      </p>
+
+      <pre>input_int8_for_core
+  -> Conv1 3x3 block
+  -> Conv3 1x1 block
+  -> PixelShuffle x2 transaction core
+  -> OutputStage
+  -> output_uint8</pre>
+
+      <div class="decision">
+        <pre>sr_core_top end-to-end verification
+mismatch count = 0
+max abs diff   = 0
+PASS</pre>
+      </div>
+
+      <p>
+        這代表 compute path 的數值、quantization、PixelShuffle mapping、final uint8 conversion 都已經正確。
+        後面部署版要做的是資料搬移、控制、memory、IP wrapper，而不是重新證明數學。
+      </p>
+    </section>
+
+    <section>
+      <h2>2. 為什麼這是新的版本</h2>
+      <p>
+        前面 Phase1 到 Phase7 的重點是 module verification 和 end-to-end correctness。
+        下一版的重點會改成 system integration。
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>階段</th>
+            <th>目前版本</th>
+            <th>下一版</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>核心目標</td>
+            <td>RTL 數值與 golden bit-exact</td>
+            <td>FPGA / PS-PL 可部署資料流</td>
+          </tr>
+          <tr>
+            <td>Memory</td>
+            <td>behavioral stage memory</td>
+            <td>BRAM / ROM / ping-pong buffer</td>
+          </tr>
+          <tr>
+            <td>Input/Output</td>
+            <td>TB 讀 .mem 餵資料</td>
+            <td>PS 透過 DMA 或 BRAM 寫入資料</td>
+          </tr>
+          <tr>
+            <td>Control</td>
+            <td>簡單 start/done for simulation</td>
+            <td>AXI-Lite register map</td>
+          </tr>
+          <tr>
+            <td>Verification</td>
+            <td>golden .mem compare</td>
+            <td>simulation + Vivado BD + PS software test</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>3. 參考 cnn_classfication 的部署模式</h2>
+      <p>
+        <code>ref/cnn_classfication</code> 的價值不是它的模型本身，而是它示範了從 CNN RTL 走到 FPGA deployment 的完整骨架。
+        對 SR Core 來說，可以參考它的系統分工，但不能直接照抄模型 datapath。
+      </p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>cnn_classfication 裡的概念</th>
+            <th>SR Core 下一版可參考的方向</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>myip_v1_0</code></td>
+            <td>建立 SR accelerator IP wrapper，包住 control、stream input、stream output、SR core。</td>
+          </tr>
+          <tr>
+            <td><code>S00_AXI</code></td>
+            <td>用 AXI-Lite registers 控制 start、done、image size、mode、status。</td>
+          </tr>
+          <tr>
+            <td><code>S00_AXIS</code> / <code>M00_AXIS</code></td>
+            <td>用 AXI-Stream 接 DMA，輸入 LR image，輸出 HR image。</td>
+          </tr>
+          <tr>
+            <td><code>connect.v</code></td>
+            <td>建立 stream-to-core bridge：接收 32-bit stream word，拆成 int8 pixel，寫入 input buffer，啟動 SR core，再送出 output stream。</td>
+          </tr>
+          <tr>
+            <td>Block Memory Generator</td>
+            <td>把 feature memory、input/output buffer、weight ROM、quant parameter ROM 換成 BRAM/IP。</td>
+          </tr>
+          <tr>
+            <td>PS Python/PYNQ test</td>
+            <td>用 Python 載入 bit/hwh，配置 DMA buffer，送 LR image，讀回 HR output。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="warn">
+        <p>
+          重要差異：cnn_classfication 是分類器，輸出只有少量 score；
+          SR Core 是 Super Resolution，輸出是完整 16x16 或未來更大 HR image。
+          所以 SR 的 output path、buffer size、stream packet、PixelShuffle write order 會比分類器更重要。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>4. 下一版目標架構</h2>
+      <p>
+        下一版可以先不要一次做到完整 DMA deployment。
+        比較穩的做法是分成幾層：先把 behavioral top 改成 memory-oriented top，
+        再變成 IP-oriented top，最後才接 PS/PL。
+      </p>
+
+      <pre>PS / Python
+  -> AXI-Lite control registers
+  -> AXI DMA MM2S
+  -> SR input stream bridge
+  -> input buffer
+  -> sr_core_top_deploy
+  -> output buffer
+  -> AXI DMA S2MM
+  -> PS reads uint8 HR image</pre>
+
+      <p>建議命名方向：</p>
+      <pre>sr_core_top_verify      目前 Phase7 baseline
+sr_core_top_mem         memory-oriented top
+sr_stream_bridge        AXI-Stream / byte packing bridge
+sr_axi_lite_regs        control/status registers
+sr_accel_v1_0           final custom IP wrapper
+sr_ps_client.py         PS/PYNQ test program</pre>
+    </section>
+
+    <section>
+      <h2>5. Roadmap</h2>
+
+      <h3>Step A：Memory-Oriented Top</h3>
+      <p>
+        先把 Phase7 的 behavioral stage memory 整理成更接近硬體部署的 memory boundary。
+        目標不是加速，而是明確定義每個 buffer 的 address/data/we/en。
+      </p>
+      <pre>input_buffer
+feature_mem0
+feature_mem1
+feature_mem2 / output_buffer
+weight_rom
+quant_param_rom</pre>
+
+      <h3>Step B：Weight / Quant Parameter ROM</h3>
+      <p>
+        目前 weight 與 M0/M1 是 TB 透過 port 餵入。
+        部署版應該把它們固定到 ROM 或 BRAM 初始化檔。
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>資料</th>
+            <th>目前</th>
+            <th>部署版</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Conv1 weight</td>
+            <td><code>conv1_weight.mem</code> 由 TB 載入</td>
+            <td>weight ROM / COE / MEM init</td>
+          </tr>
+          <tr>
+            <td>Conv3 weight</td>
+            <td><code>conv3_weight.mem</code> 由 TB 載入</td>
+            <td>weight ROM / COE / MEM init</td>
+          </tr>
+          <tr>
+            <td>M0/M1</td>
+            <td><code>conv*_m0.mem</code>、<code>conv*_m1.mem</code></td>
+            <td>quant parameter ROM</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Step C：Input/Output Buffer</h3>
+      <p>
+        SR 的 input/output 都是 image tensor，不是分類器那種少量 score。
+        所以 buffer 規格要先定清楚。
+      </p>
+      <pre>input_buffer      : signed int8 LR image
+output_buffer     : uint8 HR image
+output byte count : 16 * 16 = 256 for current patch
+future image      : tile-based or frame-based transfer</pre>
+
+      <h3>Step D：Stream Bridge</h3>
+      <p>
+        參考 <code>connect.v</code> 的精神，建立 SR 專用 bridge：
+        AXI-Stream 進來是 32-bit word，內部拆成 4 個 8-bit pixel；
+        SR output 再把 4 個 uint8 pixel pack 成 32-bit word 送回 DMA。
+      </p>
+      <pre>rx_data[7:0]    -> pixel 0
+rx_data[15:8]   -> pixel 1
+rx_data[23:16]  -> pixel 2
+rx_data[31:24]  -> pixel 3
+
+tx_data = {pixel3, pixel2, pixel1, pixel0}</pre>
+
+      <h3>Step E：AXI-Lite Control</h3>
+      <p>
+        建立最小控制暫存器，不要一開始設計太複雜。
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Offset</th>
+            <th>Register</th>
+            <th>用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>0x00</code></td>
+            <td>CONTROL</td>
+            <td>start、soft reset</td>
+          </tr>
+          <tr>
+            <td><code>0x04</code></td>
+            <td>STATUS</td>
+            <td>busy、done、error</td>
+          </tr>
+          <tr>
+            <td><code>0x08</code></td>
+            <td>INPUT_SIZE</td>
+            <td>目前固定 8x8，未來可支援 tile size</td>
+          </tr>
+          <tr>
+            <td><code>0x0C</code></td>
+            <td>OUTPUT_SIZE</td>
+            <td>目前固定 16x16</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Step F：Vivado Block Design</h3>
+      <p>
+        等 RTL wrapper 穩定後，再建立 Vivado BD。
+        參考 cnn_classfication 的方式，BD 大致需要：
+      </p>
+      <pre>Zynq / MPSoC Processing System
+AXI DMA
+AXI Interconnect
+AXI-Lite interconnect
+sr_accel_v1_0
+Block Memory Generator for ROM/RAM
+Reset processor system reset</pre>
+
+      <h3>Step G：PS/PYNQ Software</h3>
+      <p>
+        最後建立 Python 測試流程，功能類似 cnn_classfication 的 PS 端 notebook/client，
+        但輸入輸出要換成 SR image。
+      </p>
+      <pre>load overlay bit/hwh
+allocate input uint8 / int8 buffer
+prepare LR image or patch
+send DMA input
+start SR accelerator
+receive DMA output
+reshape to HR image
+compare with software golden or save image</pre>
+    </section>
+
+    <section>
+      <h2>6. 建議不要一次做的事</h2>
+      <p>
+        目前最容易失控的是：同時改 streaming、BRAM、AXI、DMA、PS software。
+        建議每次只替換一層，並且永遠保留 Phase7 的 golden baseline。
+      </p>
+      <pre>不要同時做：
+- full AXI DMA
+- BRAM latency handling
+- weight ROM conversion
+- variable image size
+- real camera input
+- throughput optimization</pre>
+
+      <div class="decision">
+        <p>
+          比較好的順序是：先 memory boundary，再 ROM，再 stream bridge，再 AXI-Lite，
+          最後才接 DMA 和 PS software。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>7. 最終希望的樣子</h2>
+      <p>
+        最終這個 SR accelerator 會像 cnn_classfication 專案一樣，有清楚的 PL IP、
+        Vivado Block Design、PS software、bit/hwh、以及可重複測試的資料流程。
+        但資料流會是 SR 專用，不是分類器專用。
+      </p>
+
+      <pre>Python / PS
+  -> input LR image
+  -> quantize or prepare int8 tensor
+  -> DMA to PL
+  -> sr_accel_v1_0
+     -> Conv1
+     -> Conv3
+     -> PixelShuffle
+     -> OutputStage
+  -> DMA back to PS
+  -> uint8 HR image</pre>
+
+      <p>
+        目前 Phase7 已經提供一個正確的 compute core baseline。
+        下一版的核心任務，就是把這個 baseline 包成真正可放進 Vivado / PS-PL flow 的 accelerator。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

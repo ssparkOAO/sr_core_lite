@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase4 Conv1 3x3 MAC</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>Phase4 Conv1 3x3 MAC</h1>
+      <p class="small">位置：<code>model_lite/sr_core/html/phase4_conv1_3x3_mac.html</code></p>
+      <p class="small">回到主頁：<a href="index.html">SR Core 專案首頁</a></p>
+      <p class="small">回到 RTL 進度：<a href="rtl/index.html">rtl/index.html</a></p>
+      <p>
+        本頁記錄 Phase4：Conv1 的 <code>3x3</code> window generation + MAC。
+        目前只驗證 <code>input_int8_for_core -> conv1_acc_int32</code>，
+        不做 requant、ReLU、Conv3 或 PixelShuffle。
+      </p>
+    </header>
+
+    <section>
+      <h2>1. 本階段目標</h2>
+      <pre>input_int8_for_core.mem
+  -> sr_window_3x3_cin1
+  -> sr_conv3x3_cin1_cout8_mac
+  -> conv1_acc_int32.mem</pre>
+
+      <p>
+        Conv1 是模型中的第一個 convolution layer，kernel 是 <code>3x3</code>，
+        <code>Cin=1</code>，<code>Cout=8</code>。
+      </p>
+    </section>
+
+    <section>
+      <h2>2. Tensor Shape</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Tensor</th>
+            <th>Shape</th>
+            <th>說明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>input_int8_for_core.mem</code></td>
+            <td><code>(8,8,1)</code></td>
+            <td>Conv1 input，signed int8。</td>
+          </tr>
+          <tr>
+            <td><code>conv1_weight.mem</code></td>
+            <td><code>[8][3][3][1]</code></td>
+            <td>Cin=1，所以可視為 <code>weight[co][ky][kx]</code>。</td>
+          </tr>
+          <tr>
+            <td><code>conv1_acc_int32.mem</code></td>
+            <td><code>(8,8,8)</code></td>
+            <td>Conv1 MAC golden，signed int32。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>3. Padding 為什麼是 PAD_VALUE</h2>
+      <p>
+        Conv1 input 是 quantized int8 tensor。影像外圍 padding 不能用數學上的 0，
+        而要使用 input zero point。此模型的 input zero point 是：
+      </p>
+
+      <div class="decision">
+        <pre>PAD_VALUE = -128</pre>
+      </div>
+
+      <p>
+        如果 padding 錯用 0，Conv1 border 位置的 accumulator 會明顯 mismatch。
+        所以 RTL 裡把 padding 做成 architecture-level parameter，
+        避免 <code>-128</code> 散落在各處。
+      </p>
+    </section>
+
+    <section>
+      <h2>4. Window Concept</h2>
+      <p>
+        <code>sr_window_3x3_cin1</code> 負責在 RTL 內產生 padded 3x3 window。
+        Testbench 不幫 DUT 做 window，也不幫 DUT 補 padding。
+      </p>
+
+      <pre>win00 win01 win02
+win10 win11 win12
+win20 win21 win22</pre>
+
+      <p>
+        目前 Phase4 已改成 streaming line-buffer architecture。
+        Window core 內部走一個 padded raster：
+        <code>(IMG_H+2) x (IMG_W+2)</code>。遇到 padding 位置時，
+        RTL 自己注入 <code>PAD_VALUE</code>；遇到真實影像位置時，
+        用 <code>in_ready</code> 向外部 input source 要下一個 signed int8 pixel。
+      </p>
+    </section>
+
+    <section>
+      <h2>5. Line Buffer Concept</h2>
+      <p>
+        Streaming 版本使用 two line buffers 保存前兩列 padded-stream 資料，
+        再配合目前 padded-stream pixel 形成 3x3 window：
+      </p>
+
+      <pre>two rows up   -> win00 win01 win02
+previous row  -> win10 win11 win12
+current row   -> win20 win21 win22</pre>
+
+      <p>
+        這版不是 frame memory random access。Pixel stream 一邊進，
+        line buffer 一邊更新，3x3 window 一邊滑動產生。
+        Padding row / padding column 也走同一條 padded-stream datapath，
+        所以 top、left、right、bottom padding 都由 RTL window core 處理。
+      </p>
+    </section>
+
+    <section>
+      <h2>6. x/y Tracking 與 window_valid</h2>
+      <p>
+        Window module 會輸出 <code>out_x</code>、<code>out_y</code>
+        表示目前 window 對應的 output coordinate。
+      </p>
+
+      <p>
+        當 <code>window_valid=1</code> 時，<code>win00~win22</code>
+        對應該座標的 padded 3x3 window，MAC output 可與
+        <code>conv1_acc_int32.mem</code> 的同一個 pixel index 比對。
+      </p>
+
+      <p>
+        <code>in_ready</code> 只會在 padded raster 的真實影像位置拉高。
+        Testbench 模擬外部 pixel source：只有看到 <code>in_ready</code>
+        才送下一個 <code>input_int8_for_core.mem</code> pixel。
+        因此 TB 沒有替 DUT 做 padding 或 window 排列。
+      </p>
+    </section>
+
+    <section>
+      <h2>7. 3x3 MAC 數學</h2>
+      <pre>acc[co] =
+    sum ky=0..2
+    sum kx=0..2
+        window[ky][kx] * weight[co][ky][kx]</pre>
+
+      <p>
+        目前 MAC 只做 signed int8 x signed int8 的 multiply accumulate，
+        output 是 signed int32 accumulator。不加 bias、不做 requant、不做 ReLU。
+      </p>
+    </section>
+
+    <section>
+      <h2>8. Weight Mapping</h2>
+      <p>
+        <code>conv1_weight.mem</code> flatten 後是 output-channel major。
+        每個 output channel 有 9 個 3x3 weights：
+      </p>
+
+      <pre>co0: w000~w008
+co1: w100~w108
+co2: w200~w208
+...
+co7: w700~w708</pre>
+    </section>
+
+    <section>
+      <h2>9. Golden Verification Flow</h2>
+      <pre>1. 讀 input_int8_for_core.mem
+2. 讀 conv1_weight.mem
+3. 讀 conv1_acc_int32.mem
+4. input stream follows in_ready -> sr_window_3x3_cin1
+5. window_valid -> sr_conv3x3_cin1_cout8_mac
+6. compare acc0~acc7 with conv1_acc_int32.mem</pre>
+
+      <p>
+        若 mismatch，testbench 會印出 <code>x</code>、<code>y</code>、
+        output channel、RTL acc、golden acc，以及完整 3x3 window。
+        這對 debug padding 和 window mapping 很重要。
+      </p>
+    </section>
+
+    <section>
+      <h2>10. PASS 條件</h2>
+      <div class="decision">
+        <pre>mismatch count = 0
+max abs diff   = 0</pre>
+      </div>
+    </section>
+
+    <section>
+      <h2>11. 下一步</h2>
+      <p>
+        下一階段會把 Conv1 MAC output 接到 <code>sr_requantize</code>，
+        再接 <code>sr_activation_relu_int8</code>，
+        目標比對 <code>conv1_out_int8.mem</code>。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

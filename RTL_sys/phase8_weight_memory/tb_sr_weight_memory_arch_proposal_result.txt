@@ -1,0 +1,13 @@
+Phase8.1 Weight Memory Self-Check
+==================================================
+Purpose : verify memory-style weight/M0/M1 mapping
+Scope   : mapping readback only, not connected to sr_core_top
+
+conv1_weight mismatch count = 0
+conv3_weight mismatch count = 0
+conv1_m0 mismatch count     = 0
+conv1_m1 mismatch count     = 0
+conv3_m0 mismatch count     = 0
+conv3_m1 mismatch count     = 0
+total mismatch count        = 0
+PASS

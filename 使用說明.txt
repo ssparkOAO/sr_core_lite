@@ -1,0 +1,145 @@
+SR Core Python 工具使用說明
+==========================
+
+位置
+----
+
+工具放在：
+
+  model_lite\sr_core\tools
+
+輸出預設放在：
+
+  model_lite\sr_core\generated
+
+
+目前新增檔案
+------------
+
+1. tools\tflite_flatbuffer.py
+
+   這是簡化版 TFLite flatbuffer parser。
+   目前用途是讀取本專案 SR 小模型需要的 tensor、operator、weight、bias、scale、zero point。
+   不需要安裝 TensorFlow。
+
+2. tools\extract_sr_tflite_params.py
+
+   從 int8 TFLite 取出 Conv1 / Conv3 的：
+
+   - weight
+   - bias
+   - input scale / zero point
+   - output scale / zero point
+   - per-channel weight scale
+   - M0
+   - M1
+
+   同時輸出 .json、.mem、.coe。
+
+3. tools\sr_core_golden.py
+
+   使用 extract 出來的參數，在 Python 裡跑小 patch golden：
+
+   input uint8
+     -> input int8
+     -> Conv1 3x3
+     -> ReLU
+     -> Conv3 1x1
+     -> PixelShuffle scale=2
+     -> output uint8
+
+
+建議使用順序
+------------
+
+第一步：提取 TFLite 參數
+
+  python model_lite\sr_core\tools\extract_sr_tflite_params.py
+
+預設會讀：
+
+  model\Bilinear_PP_v5_test_qat.tflite
+
+預設會輸出：
+
+  model_lite\sr_core\generated\sr_tflite_params.json
+  model_lite\sr_core\generated\conv1_weight.mem
+  model_lite\sr_core\generated\conv1_bias.mem
+  model_lite\sr_core\generated\conv1_m0.mem
+  model_lite\sr_core\generated\conv1_m1.mem
+  model_lite\sr_core\generated\conv3_weight.mem
+  model_lite\sr_core\generated\conv3_bias.mem
+  model_lite\sr_core\generated\conv3_m0.mem
+  model_lite\sr_core\generated\conv3_m1.mem
+
+也會另外輸出對應的 .coe，方便之後 Vivado BRAM 初始化使用。
+
+
+第二步：產生小 patch golden
+
+  python model_lite\sr_core\tools\sr_core_golden.py --height 8 --width 8 --seed 1
+
+預設會輸出：
+
+  model_lite\sr_core\generated\golden\input_uint8.npy
+  model_lite\sr_core\generated\golden\input_int8_for_core.npy
+  model_lite\sr_core\generated\golden\conv1_acc_int32.npy
+  model_lite\sr_core\generated\golden\conv1_out_int8.npy
+  model_lite\sr_core\generated\golden\conv3_acc_int32.npy
+  model_lite\sr_core\generated\golden\conv3_out_int8.npy
+  model_lite\sr_core\generated\golden\pixel_shuffle_out_int8.npy
+  model_lite\sr_core\generated\golden\output_uint8.npy
+
+每個 .npy 也會有一份同名 .mem，給 Verilog testbench 讀取或人工檢查。
+
+
+如果要換固定尺寸 TFLite
+----------------------
+
+可以手動指定：
+
+  python model_lite\sr_core\tools\extract_sr_tflite_params.py --tflite model\Bilinear_PP_v5_test_qat_time.tflite
+
+注意：
+
+  不要混用不同 TFLite 的 weight、bias、scale、zero point、M0、M1。
+  如果換 TFLite，就要重新跑 extract，再重新跑 golden。
+
+
+M0 / M1 是什麼
+--------------
+
+Conv 的 int32 MAC 先算：
+
+  acc = sum(q_input * q_weight)
+
+但 TFLite 真正的量化公式需要考慮 input zero point：
+
+  sum((q_input - Z1) * q_weight)
+
+因此工具會預先把 bias、input zero point、output zero point、scale 合成硬體好算的常數：
+
+  M0 = floor((input_scale * weight_scale / output_scale) * 2^32)
+
+  M1 = M0 * (bias - input_zero_point * sum(weight)) + (output_zero_point << 32)
+
+RTL requantization 可以寫成：
+
+  tmp   = M0 * acc + M1
+  q_out = round(tmp / 2^32)
+  q_out = clamp(q_out, -128, 127)
+
+
+現在階段要先做什麼
+------------------
+
+目前先不要急著把 .coe 接進 Vivado。
+
+建議先用 generated 裡的 .mem / .npy 驗證 sr_core RTL：
+
+1. 先驗證 Conv1x1 MAC + M0/M1 requantization
+2. 再驗證 Conv3x3 window + MAC
+3. 再串 Conv1 + Conv3
+4. 最後接 PixelShuffle
+
+等 RTL 數學結果都對，再把 .coe 用在 BRAM 初始化。

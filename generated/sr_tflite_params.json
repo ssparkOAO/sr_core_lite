@@ -1,0 +1,895 @@
+{
+  "source_tflite": "C:\\M11413047\\codex\\final_proj\\model_lite\\sr_core\\tools\\Bilinear_PP_v5_test_qat.tflite",
+  "model_input": {
+    "index": 0,
+    "name": "lr_input",
+    "shape": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "shape_signature": [
+      1,
+      -1,
+      -1,
+      1
+    ],
+    "type": 3,
+    "type_name": "UINT8",
+    "buffer": 1,
+    "quantization": {
+      "scales": [
+        0.003921568859368563
+      ],
+      "zero_points": [
+        0
+      ],
+      "quantized_dimension": 0
+    }
+  },
+  "model_output": {
+    "index": 12,
+    "name": "Identity",
+    "shape": [
+      1,
+      1,
+      1,
+      1
+    ],
+    "shape_signature": [
+      1,
+      -1,
+      -1,
+      1
+    ],
+    "type": 3,
+    "type_name": "UINT8",
+    "buffer": 13,
+    "quantization": {
+      "scales": [
+        0.0039223115891218185
+      ],
+      "zero_points": [
+        0
+      ],
+      "quantized_dimension": 0
+    }
+  },
+  "operators": [
+    {
+      "index": 0,
+      "opcode_index": 0,
+      "builtin_code": 114,
+      "op_name": "QUANTIZE",
+      "inputs": [
+        0
+      ],
+      "outputs": [
+        4
+      ]
+    },
+    {
+      "index": 1,
+      "opcode_index": 1,
+      "builtin_code": 3,
+      "op_name": "CONV_2D",
+      "inputs": [
+        4,
+        3,
+        2
+      ],
+      "outputs": [
+        5
+      ]
+    },
+    {
+      "index": 2,
+      "opcode_index": 1,
+      "builtin_code": 3,
+      "op_name": "CONV_2D",
+      "inputs": [
+        5,
+        6,
+        7
+      ],
+      "outputs": [
+        8
+      ]
+    },
+    {
+      "index": 3,
+      "opcode_index": 2,
+      "builtin_code": 5,
+      "op_name": "DEPTH_TO_SPACE",
+      "inputs": [
+        8
+      ],
+      "outputs": [
+        9
+      ]
+    },
+    {
+      "index": 4,
+      "opcode_index": 3,
+      "builtin_code": 57,
+      "op_name": "MINIMUM",
+      "inputs": [
+        9,
+        1
+      ],
+      "outputs": [
+        10
+      ]
+    },
+    {
+      "index": 5,
+      "opcode_index": 4,
+      "builtin_code": 19,
+      "op_name": "RELU",
+      "inputs": [
+        10
+      ],
+      "outputs": [
+        11
+      ]
+    },
+    {
+      "index": 6,
+      "opcode_index": 0,
+      "builtin_code": 114,
+      "op_name": "QUANTIZE",
+      "inputs": [
+        11
+      ],
+      "outputs": [
+        12
+      ]
+    }
+  ],
+  "layers": [
+    {
+      "name": "conv1",
+      "op_index": 1,
+      "input_tensor": {
+        "index": 4,
+        "name": "tfl.quantize",
+        "shape": [
+          1,
+          1,
+          1,
+          1
+        ],
+        "shape_signature": [
+          1,
+          -1,
+          -1,
+          1
+        ],
+        "type": 9,
+        "type_name": "INT8",
+        "buffer": 5,
+        "quantization": {
+          "scales": [
+            0.003921568859368563
+          ],
+          "zero_points": [
+            -128
+          ],
+          "quantized_dimension": 0
+        }
+      },
+      "output_tensor": {
+        "index": 5,
+        "name": "Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv1_relu/Relu;StatefulPartitionedCall/Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv1_relu/Relu;Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv1_conv/BiasAdd;StatefulPartitionedCall/Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv1_conv/BiasAdd;Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv1_conv/Conv2D;StatefulPartitionedCall/Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv1_conv/Conv2D;unknown_2",
+        "shape": [
+          1,
+          1,
+          1,
+          8
+        ],
+        "shape_signature": [
+          1,
+          -1,
+          -1,
+          8
+        ],
+        "type": 9,
+        "type_name": "INT8",
+        "buffer": 6,
+        "quantization": {
+          "scales": [
+            0.008535092696547508
+          ],
+          "zero_points": [
+            -128
+          ],
+          "quantized_dimension": 0
+        }
+      },
+      "weight": {
+        "tensor": {
+          "index": 3,
+          "name": "Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv1_conv/Conv2D;StatefulPartitionedCall/Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv1_conv/Conv2D;Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv1_conv/LastValueQuant/FakeQuantWithMinMaxVarsPerChannel;StatefulPartitionedCall/Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv1_conv/LastValueQuant/FakeQuantWithMinMaxVarsPerChannel",
+          "shape": [
+            8,
+            3,
+            3,
+            1
+          ],
+          "shape_signature": [],
+          "type": 9,
+          "type_name": "INT8",
+          "buffer": 4,
+          "quantization": {
+            "scales": [
+              0.006922599859535694,
+              0.006795458495616913,
+              0.010269843973219395,
+              0.0051727755926549435,
+              0.004562605172395706,
+              0.006629584357142448,
+              0.006115073803812265,
+              0.00496057840064168
+            ],
+            "zero_points": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "quantized_dimension": 0
+          }
+        },
+        "values": [
+          [
+            [
+              [
+                63
+              ],
+              [
+                -32
+              ],
+              [
+                31
+              ]
+            ],
+            [
+              [
+                -26
+              ],
+              [
+                -111
+              ],
+              [
+                4
+              ]
+            ],
+            [
+              [
+                127
+              ],
+              [
+                41
+              ],
+              [
+                -7
+              ]
+            ]
+          ],
+          [
+            [
+              [
+                13
+              ],
+              [
+                50
+              ],
+              [
+                42
+              ]
+            ],
+            [
+              [
+                -55
+              ],
+              [
+                80
+              ],
+              [
+                127
+              ]
+            ],
+            [
+              [
+                -25
+              ],
+              [
+                69
+              ],
+              [
+                -69
+              ]
+            ]
+          ],
+          [
+            [
+              [
+                -18
+              ],
+              [
+                2
+              ],
+              [
+                -25
+              ]
+            ],
+            [
+              [
+                48
+              ],
+              [
+                127
+              ],
+              [
+                -22
+              ]
+            ],
+            [
+              [
+                4
+              ],
+              [
+                -32
+              ],
+              [
+                20
+              ]
+            ]
+          ],
+          [
+            [
+              [
+                -81
+              ],
+              [
+                -45
+              ],
+              [
+                -58
+              ]
+            ],
+            [
+              [
+                84
+              ],
+              [
+                125
+              ],
+              [
+                54
+              ]
+            ],
+            [
+              [
+                127
+              ],
+              [
+                53
+              ],
+              [
+                -52
+              ]
+            ]
+          ],
+          [
+            [
+              [
+                51
+              ],
+              [
+                -5
+              ],
+              [
+                85
+              ]
+            ],
+            [
+              [
+                49
+              ],
+              [
+                -127
+              ],
+              [
+                40
+              ]
+            ],
+            [
+              [
+                -28
+              ],
+              [
+                -16
+              ],
+              [
+                46
+              ]
+            ]
+          ],
+          [
+            [
+              [
+                -17
+              ],
+              [
+                7
+              ],
+              [
+                3
+              ]
+            ],
+            [
+              [
+                127
+              ],
+              [
+                -65
+              ],
+              [
+                22
+              ]
+            ],
+            [
+              [
+                -6
+              ],
+              [
+                -10
+              ],
+              [
+                7
+              ]
+            ]
+          ],
+          [
+            [
+              [
+                -16
+              ],
+              [
+                -17
+              ],
+              [
+                87
+              ]
+            ],
+            [
+              [
+                77
+              ],
+              [
+                24
+              ],
+              [
+                95
+              ]
+            ],
+            [
+              [
+                -69
+              ],
+              [
+                127
+              ],
+              [
+                -51
+              ]
+            ]
+          ],
+          [
+            [
+              [
+                52
+              ],
+              [
+                -24
+              ],
+              [
+                127
+              ]
+            ],
+            [
+              [
+                -11
+              ],
+              [
+                -28
+              ],
+              [
+                -73
+              ]
+            ],
+            [
+              [
+                -40
+              ],
+              [
+                52
+              ],
+              [
+                35
+              ]
+            ]
+          ]
+        ],
+        "shape": [
+          8,
+          3,
+          3,
+          1
+        ],
+        "layout": "[cout, kh, kw, cin]"
+      },
+      "bias": {
+        "tensor": {
+          "index": 2,
+          "name": "unknown_2",
+          "shape": [
+            8
+          ],
+          "shape_signature": [],
+          "type": 2,
+          "type_name": "INT32",
+          "buffer": 3,
+          "quantization": {
+            "scales": [
+              2.714745278353803e-05,
+              2.664885869307909e-05,
+              4.0273898775922135e-05,
+              2.028539529419504e-05,
+              1.7892571122501977e-05,
+              2.599837171146646e-05,
+              2.398068318143487e-05,
+              1.9453249478829093e-05
+            ],
+            "zero_points": [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0
+            ],
+            "quantized_dimension": 0
+          }
+        },
+        "values": [
+          270,
+          2094,
+          2639,
+          9292,
+          241,
+          177,
+          852,
+          133
+        ],
+        "shape": [
+          8
+        ]
+      },
+      "requant": {
+        "input_scale": 0.003921568859368563,
+        "input_zero_point": -128,
+        "output_scale": 0.008535092696547508,
+        "output_zero_point": -128,
+        "weight_scale": [
+          0.006922599859535694,
+          0.006795458495616913,
+          0.010269843973219395,
+          0.0051727755926549435,
+          0.004562605172395706,
+          0.006629584357142448,
+          0.006115073803812265,
+          0.00496057840064168
+        ],
+        "M_float": [
+          0.0031806862561675115,
+          0.0031222693612129645,
+          0.004718624829024072,
+          0.002376704788322093,
+          0.0020963533728108868,
+          0.003046056146061924,
+          0.0028096570071782538,
+          0.002279207792117087
+        ],
+        "M0_q0_32": [
+          13660943,
+          13410044,
+          20266339,
+          10207869,
+          9003769,
+          13082711,
+          12067384,
+          9789122
+        ],
+        "a2_sum_weight": [
+          90,
+          232,
+          104,
+          207,
+          95,
+          68,
+          257,
+          90
+        ],
+        "Z1a2": [
+          -11520,
+          -29696,
+          -13312,
+          -26496,
+          -12160,
+          -8704,
+          -32896,
+          -11520
+        ],
+        "M1_q32": [
+          -388693295918,
+          -123450515128,
+          -226487440499,
+          -184436598116,
+          -438100074519,
+          -433568257497,
+          -142505738656,
+          -435683175222
+        ]
+      }
+    },
+    {
+      "name": "conv3",
+      "op_index": 2,
+      "input_tensor": {
+        "index": 5,
+        "name": "Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv1_relu/Relu;StatefulPartitionedCall/Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv1_relu/Relu;Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv1_conv/BiasAdd;StatefulPartitionedCall/Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv1_conv/BiasAdd;Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv1_conv/Conv2D;StatefulPartitionedCall/Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv1_conv/Conv2D;unknown_2",
+        "shape": [
+          1,
+          1,
+          1,
+          8
+        ],
+        "shape_signature": [
+          1,
+          -1,
+          -1,
+          8
+        ],
+        "type": 9,
+        "type_name": "INT8",
+        "buffer": 6,
+        "quantization": {
+          "scales": [
+            0.008535092696547508
+          ],
+          "zero_points": [
+            -128
+          ],
+          "quantized_dimension": 0
+        }
+      },
+      "output_tensor": {
+        "index": 8,
+        "name": "Bilinear_PP_v5_Y_HF_clamp_tf/quant_clipped_relu/Relu;StatefulPartitionedCall/Bilinear_PP_v5_Y_HF_clamp_tf/quant_clipped_relu/Relu;Bilinear_PP_v5_Y_HF_clamp_tf/quant_pixel_shuffle/DepthToSpace;StatefulPartitionedCall/Bilinear_PP_v5_Y_HF_clamp_tf/quant_pixel_shuffle/DepthToSpace;Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv3/BiasAdd;StatefulPartitionedCall/Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv3/BiasAdd;Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv3/Conv2D;StatefulPartitionedCall/Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv3/Conv2D;unknown_8",
+        "shape": [
+          1,
+          1,
+          1,
+          4
+        ],
+        "shape_signature": [
+          1,
+          -1,
+          -1,
+          4
+        ],
+        "type": 9,
+        "type_name": "INT8",
+        "buffer": 9,
+        "quantization": {
+          "scales": [
+            0.003921568859368563
+          ],
+          "zero_points": [
+            -128
+          ],
+          "quantized_dimension": 0
+        }
+      },
+      "weight": {
+        "tensor": {
+          "index": 6,
+          "name": "Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv3/Conv2D;StatefulPartitionedCall/Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv3/Conv2D;Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv3/LastValueQuant/FakeQuantWithMinMaxVarsPerChannel;StatefulPartitionedCall/Bilinear_PP_v5_Y_HF_clamp_tf/quant_conv3/LastValueQuant/FakeQuantWithMinMaxVarsPerChannel",
+          "shape": [
+            4,
+            1,
+            1,
+            8
+          ],
+          "shape_signature": [],
+          "type": 9,
+          "type_name": "INT8",
+          "buffer": 7,
+          "quantization": {
+            "scales": [
+              0.006463734433054924,
+              0.0050259544514119625,
+              0.0062292092479765415,
+              0.010412846691906452
+            ],
+            "zero_points": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "quantized_dimension": 0
+          }
+        },
+        "values": [
+          [
+            [
+              [
+                -15,
+                82,
+                89,
+                8,
+                -78,
+                77,
+                -80,
+                127
+              ]
+            ]
+          ],
+          [
+            [
+              [
+                -49,
+                127,
+                79,
+                67,
+                78,
+                -36,
+                -110,
+                62
+              ]
+            ]
+          ],
+          [
+            [
+              [
+                65,
+                -30,
+                127,
+                -57,
+                -85,
+                -56,
+                104,
+                -18
+              ]
+            ]
+          ],
+          [
+            [
+              [
+                30,
+                -33,
+                78,
+                -20,
+                45,
+                -127,
+                86,
+                -67
+              ]
+            ]
+          ]
+        ],
+        "shape": [
+          4,
+          1,
+          1,
+          8
+        ],
+        "layout": "[cout, kh, kw, cin]"
+      },
+      "bias": {
+        "tensor": {
+          "index": 7,
+          "name": "unknown_8",
+          "shape": [
+            4
+          ],
+          "shape_signature": [],
+          "type": 2,
+          "type_name": "INT32",
+          "buffer": 8,
+          "quantization": {
+            "scales": [
+              5.516857709153555e-05,
+              4.2896986997220665e-05,
+              5.316687747836113e-05,
+              8.887461444828659e-05
+            ],
+            "zero_points": [
+              0,
+              0,
+              0,
+              0
+            ],
+            "quantized_dimension": 0
+          }
+        },
+        "values": [
+          -1664,
+          -3054,
+          -369,
+          -488
+        ],
+        "shape": [
+          4
+        ]
+      },
+      "requant": {
+        "input_scale": 0.008535092696547508,
+        "input_zero_point": -128,
+        "output_scale": 0.003921568859368563,
+        "output_zero_point": -128,
+        "weight_scale": [
+          0.006463734433054924,
+          0.0050259544514119625,
+          0.0062292092479765415,
+          0.010412846691906452
+        ],
+        "M_float": [
+          0.014067985168791038,
+          0.010938731071608367,
+          0.013557553179426134,
+          0.022663024656073467
+        ],
+        "M0_q0_32": [
+          60421536,
+          46981492,
+          58229247,
+          97336949
+        ],
+        "a2_sum_weight": [
+          210,
+          218,
+          50,
+          -8
+        ],
+        "Z1a2": [
+          -26880,
+          -27904,
+          -6400,
+          1024
+        ],
+        "M1_q32": [
+          973833637888,
+          617734262312,
+          -198575225231,
+          -696929280776
+        ]
+      }
+    }
+  ],
+  "notes": [
+    "M0 is floor((input_scale * weight_scale / output_scale) * 2^32).",
+    "M1 is M0 * (bias - input_zero_point * sum(weight)) + (output_zero_point << 32).",
+    "Use the same TFLite file for weight, bias, scale, zero point, M0, and M1."
+  ]
+}

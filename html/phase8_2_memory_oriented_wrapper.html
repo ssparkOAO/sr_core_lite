@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase8.2 Memory-Oriented Top Wrapper</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>Phase8.2 Memory-Oriented Top Wrapper</h1>
+      <p class="small">文件位置：<code>model_lite/sr_core/html/phase8_2_memory_oriented_wrapper.html</code></p>
+      <p class="small">返回：<a href="phase8_index.html">Phase8 完整紀錄</a></p>
+      <p>
+        Phase8.2 建立 <code>sr_core_top_mem_wrapper.v</code>。
+        這個 wrapper 將 weight/M0/M1 收進內部 memory-style arrays，
+        再轉接到已 verified 的 <code>sr_core_top</code>。
+      </p>
+    </header>
+
+    <section>
+      <h2>1. 為什麼需要 Wrapper</h2>
+      <p>
+        原本的 <code>sr_core_top</code> 是 verification-oriented top。
+        它把 Conv1/Conv3 weight 和 M0/M1 全部攤成 top-level input ports，
+        這對早期驗證很方便，但不適合 accelerator architecture。
+      </p>
+      <pre>舊方式：
+TB -> many weight/M0/M1 ports -> sr_core_top
+
+Phase8.2：
+TB -> wrapper internal memories -> verified sr_core_top -> output_uint8</pre>
+    </section>
+
+    <section>
+      <h2>2. 為什麼不直接修改 Verified RTL</h2>
+      <p>
+        <code>model_lite/sr_core/RTL</code> 目前是 Golden RTL Version。
+        若直接修改 <code>sr_core_top</code>，Phase7 的 PASS baseline 就不再是穩定參考。
+        所以 Phase8.2 把新架構放在 <code>RTL_sys/phase8_weight_memory/</code>。
+      </p>
+      <div class="decision">
+        <p>
+          這個 wrapper 是外層 architecture refactor，不是 compute datapath rewrite。
+          Conv1、Conv3、PixelShuffle、OutputStage、requantize 都仍然使用已 verified modules。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>3. Wrapper 和 sr_core_top 差異</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>項目</th>
+            <th>sr_core_top</th>
+            <th>sr_core_top_mem_wrapper</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>定位</td>
+            <td>Verification-oriented top</td>
+            <td>Memory-oriented architecture wrapper</td>
+          </tr>
+          <tr>
+            <td>Weight/M0/M1</td>
+            <td>大量 top-level input ports</td>
+            <td>內部 memory-style arrays</td>
+          </tr>
+          <tr>
+            <td>Compute datapath</td>
+            <td>已 verified</td>
+            <td>沿用已 verified <code>sr_core_top</code></td>
+          </tr>
+          <tr>
+            <td>未來相容性</td>
+            <td>適合 simulation verification</td>
+            <td>更接近 ROM/BRAM/AXI parameter storage</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>4. 使用的 Memory</h2>
+      <pre>conv1_weight_mem [0:71]  signed int8
+conv3_weight_mem [0:31]  signed int8
+conv1_m0_mem     [0:7]   signed int32
+conv1_m1_mem     [0:7]   signed int64
+conv3_m0_mem     [0:3]   signed int32
+conv3_m1_mem     [0:3]   signed int64</pre>
+      <p>
+        Phase8.2 目前仍由 TB 透過 hierarchical assignment 載入 memory。
+        這是中間驗證版本，尚未加入 BRAM IP、AXI、DMA 或 weight loader FSM。
+      </p>
+    </section>
+
+    <section>
+      <h2>5. 使用的 Golden Files</h2>
+      <pre>generated/conv1_weight.mem
+generated/conv3_weight.mem
+generated/conv1_m0.mem
+generated/conv1_m1.mem
+generated/conv3_m0.mem
+generated/conv3_m1.mem
+generated/golden/input_int8_for_core.mem
+generated/golden/output_uint8.mem</pre>
+      <p>Debug dump 仍然保留：</p>
+      <pre>feature_mem0_dump.txt
+feature_mem1_dump.txt
+feature_mem2_dump.txt</pre>
+    </section>
+
+    <section>
+      <h2>6. 驗證流程</h2>
+      <pre>TB
+  -> load weight/M0/M1 files into wrapper memories
+  -> load input_int8_for_core.mem
+  -> run sr_core_top_mem_wrapper
+  -> wrapper connects memory values to verified sr_core_top
+  -> compare output_mem with output_uint8.mem
+  -> dump feature_mem0/1/2 for layer-by-layer debug</pre>
+    </section>
+
+    <section>
+      <h2>7. 設計取捨</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>方案</th>
+            <th>是否採用</th>
+            <th>原因</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>直接修改 verified <code>sr_core_top</code></td>
+            <td>否</td>
+            <td>會破壞 Golden RTL baseline。</td>
+          </tr>
+          <tr>
+            <td>直接導入 BRAM IP</td>
+            <td>否</td>
+            <td>太早引入 read latency、XCI、初始化格式問題。</td>
+          </tr>
+          <tr>
+            <td>建立 memory-oriented wrapper</td>
+            <td>是</td>
+            <td>降低 top-level ports，同時維持目前 PASS 行為。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>8. PASS 條件與結果</h2>
+      <div class="decision">
+        <pre>Phase8.2 sr_core_top_mem_wrapper verification result
+mismatch count = 0
+max abs diff   = 0
+PASS</pre>
+      </div>
+      <p>輸出檔案：</p>
+      <pre>model_lite/sr_core/RTL_sys/phase8_weight_memory/
+  sr_core_top_mem_wrapper.v
+  tb_sr_core_top_mem_wrapper.v
+  tb_sr_core_top_mem_wrapper_result.txt
+  feature_mem0_dump.txt
+  feature_mem1_dump.txt
+  feature_mem2_dump.txt</pre>
+    </section>
+
+    <section>
+      <h2>9. 下一步</h2>
+      <p>
+        Phase8.2 可以作為 memory-oriented baseline。
+        下一步可以繼續 Phase8.3，把 wrapper 內 memory 整理成更接近 ROM/BRAM-style interface；
+        或進入 Phase9，開始處理 streaming architecture refactor。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

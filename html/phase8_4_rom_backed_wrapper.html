@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase8.4 ROM-backed Wrapper 分析</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>Phase8.4 ROM-backed Wrapper 分析</h1>
+      <p class="small">文件位置：<code>model_lite/sr_core/html/phase8_4_rom_backed_wrapper.html</code></p>
+      <p class="small">Vivado project：<code>model_lite/sr_core/vivado/sr_core_bram_pynqz2</code></p>
+      <p class="small">分析報告：<code>model_lite/sr_core/RTL_sys/phase8_3_vivado_bram/sim/param_rom_ip_config_report.txt</code></p>
+      <p>
+        這份文件是 Phase8.4 的第一步：先分析目前 Vivado project 中 6 個 Block Memory Generator ROM IP 的配置。
+        本階段尚未開始 wrapper integration。
+      </p>
+    </header>
+
+    <section>
+      <h2>1. 本階段目標</h2>
+      <p>
+        Phase8.3 已驗證 Vivado ROM IP 可以正確 readback 參數。Phase8.4 的下一步會把 ROM IP 接回
+        memory-oriented top wrapper，確認整個 SR pipeline 最終 <code>output_uint8</code> 仍然 PASS。
+      </p>
+      <p>
+        但在接 wrapper 前，必須先確認 ROM IP 的實際配置，尤其是 read latency、enable、output register。
+        這些會直接影響後續 address scheduling 與 valid timing。
+      </p>
+    </section>
+
+    <section>
+      <h2>2. Vivado IP 配置總表</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>IP</th>
+            <th>ROM Type</th>
+            <th>Data Width</th>
+            <th>Depth</th>
+            <th>Address Width</th>
+            <th>Read Latency</th>
+            <th>Enable Signal</th>
+            <th>Output Register</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>conv1_weight_rom</code></td>
+            <td>Single Port ROM</td>
+            <td>8</td>
+            <td>72</td>
+            <td>7</td>
+            <td>1 clock</td>
+            <td><code>ena</code> enabled</td>
+            <td>disabled</td>
+          </tr>
+          <tr>
+            <td><code>conv3_weight_rom</code></td>
+            <td>Single Port ROM</td>
+            <td>8</td>
+            <td>32</td>
+            <td>5</td>
+            <td>1 clock</td>
+            <td><code>ena</code> enabled</td>
+            <td>disabled</td>
+          </tr>
+          <tr>
+            <td><code>conv1_m0_rom</code></td>
+            <td>Single Port ROM</td>
+            <td>32</td>
+            <td>8</td>
+            <td>3</td>
+            <td>1 clock</td>
+            <td><code>ena</code> enabled</td>
+            <td>disabled</td>
+          </tr>
+          <tr>
+            <td><code>conv1_m1_rom</code></td>
+            <td>Single Port ROM</td>
+            <td>64</td>
+            <td>8</td>
+            <td>3</td>
+            <td>1 clock</td>
+            <td><code>ena</code> enabled</td>
+            <td>disabled</td>
+          </tr>
+          <tr>
+            <td><code>conv3_m0_rom</code></td>
+            <td>Single Port ROM</td>
+            <td>32</td>
+            <td>4</td>
+            <td>2</td>
+            <td>1 clock</td>
+            <td><code>ena</code> enabled</td>
+            <td>disabled</td>
+          </tr>
+          <tr>
+            <td><code>conv3_m1_rom</code></td>
+            <td>Single Port ROM</td>
+            <td>64</td>
+            <td>4</td>
+            <td>2</td>
+            <td>1 clock</td>
+            <td><code>ena</code> enabled</td>
+            <td>disabled</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>3. 各欄位說明</h2>
+      <h3>3.1 ROM Type</h3>
+      <p>
+        六個 IP 都是 <code>Single_Port_ROM</code>。這符合目前用途：weight / M0 / M1 是固定參數，
+        inference 過程只需要讀，不需要寫。
+      </p>
+
+      <h3>3.2 Data Width</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>資料</th>
+            <th>Width</th>
+            <th>原因</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Conv1 / Conv3 weight</td>
+            <td>8</td>
+            <td>INT8 signed weight。</td>
+          </tr>
+          <tr>
+            <td>M0</td>
+            <td>32</td>
+            <td>requant multiplier 使用 signed 32-bit。</td>
+          </tr>
+          <tr>
+            <td>M1</td>
+            <td>64</td>
+            <td>requant offset 使用 signed 64-bit。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>3.3 Address Width</h3>
+      <p>
+        Address width 由 depth 推導：<code>ceil(log2(depth))</code>。
+        例如 Conv1 weight depth 是 72，需要 7-bit address，因為 6-bit 只能表示 64 筆。
+      </p>
+      <pre>conv1_weight_rom: depth 72 -> addr width 7
+conv3_weight_rom: depth 32 -> addr width 5
+conv1_m0/m1_rom:  depth 8  -> addr width 3
+conv3_m0/m1_rom:  depth 4  -> addr width 2</pre>
+
+      <h3>3.4 Read Latency</h3>
+      <p>
+        Output register 雖然關閉，但 BMG ROM 仍是 synchronous read。也就是 address / enable 在某個 clock edge
+        被取樣後，資料在下一個 clock 週期可用。後續 wrapper 不能把 ROM 當成 combinational lookup table。
+      </p>
+      <div class="decision">
+        <p>
+          後續 Phase8.4 wrapper integration 的核心風險不是資料內容，而是 read latency。
+          Controller 必須多留一拍，或在啟動前先 preload 參數。
+        </p>
+      </div>
+
+      <h3>3.5 Enable Signal</h3>
+      <p>
+        六個 IP 都保留 <code>ena</code>，Vivado 設定為 <code>Use_ENA_Pin</code>。
+        如果設計每一拍都要讀，可以把 <code>ena</code> tie high；如果後續有 controller，則可以用
+        <code>ena</code> 標示有效讀取週期。
+      </p>
+
+      <h3>3.6 Output Register</h3>
+      <p>
+        目前 <code>Register_PortA_Output_of_Memory_Primitives</code> 與
+        <code>Register_PortA_Output_of_Memory_Core</code> 都是 <code>false</code>。
+        這代表沒有額外 output pipeline register。若未來打開 output register，read latency 會再增加，
+        但 timing 可能較容易收斂。
+      </p>
+    </section>
+
+    <section>
+      <h2>4. 原始 Vivado CONFIG 摘要</h2>
+      <pre>conv1_weight_rom:
+  Memory_Type = Single_Port_ROM
+  Read_Width_A = 8
+  Write_Depth_A = 72
+  Enable_A = Use_ENA_Pin
+  Register_PortA_Output_of_Memory_Primitives = false
+  Register_PortA_Output_of_Memory_Core = false
+
+conv3_weight_rom:
+  Memory_Type = Single_Port_ROM
+  Read_Width_A = 8
+  Write_Depth_A = 32
+  Enable_A = Use_ENA_Pin
+  Register_PortA_Output_of_Memory_Primitives = false
+  Register_PortA_Output_of_Memory_Core = false
+
+conv1_m0_rom / conv3_m0_rom:
+  Memory_Type = Single_Port_ROM
+  Read_Width_A = 32
+  Enable_A = Use_ENA_Pin
+  Output Register = disabled
+
+conv1_m1_rom / conv3_m1_rom:
+  Memory_Type = Single_Port_ROM
+  Read_Width_A = 64
+  Enable_A = Use_ENA_Pin
+  Output Register = disabled</pre>
+    </section>
+
+    <section>
+      <h2>5. 對 Wrapper Integration 的影響</h2>
+      <p>
+        Phase8.2 的 memory-oriented wrapper 目前使用 internal reg memory，邏輯上比較像可以直接取值。
+        Phase8.4 若改成 ROM-backed wrapper，需要處理以下差異：
+      </p>
+      <ul>
+        <li>ROM read data 不是 combinational，至少要等 1 clock。</li>
+        <li>原本一次展開所有 weight port 的方式，未來可能要改成 preload register bank。</li>
+        <li>若仍要餵給既有 verified module 的大量 port，最簡單方式是 reset/start 前先從 ROM 讀出所有參數並暫存在 wrapper registers。</li>
+        <li>若要真正 streaming / on-demand read，則要重新設計 MAC datapath 的 weight access timing，這會比較像 Phase9 之後的工作。</li>
+      </ul>
+      <div class="decision">
+        <p>
+          Phase8.4 建議先走保守路線：ROM IP -> preload registers -> existing verified top ports。
+          這樣可以先驗證 top 換成 ROM-backed parameter source 後，end-to-end output 仍然 PASS。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>6. 下一步</h2>
+      <p>
+        下一步才開始 wrapper integration。目標是建立 ROM-backed wrapper，但仍不修改
+        <code>model_lite/sr_core/RTL/</code> verified modules。
+      </p>
+      <pre>Phase8.4 next:
+parameter ROM IP
+    -> preload / bridge registers
+    -> verified sr_core_top style ports
+    -> output_uint8 compare
+    -> mismatch count = 0</pre>
+    </section>
+  </main>
+</body>
+</html>

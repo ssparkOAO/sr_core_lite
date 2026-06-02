@@ -1,0 +1,464 @@
+本專案是：
+
+FPGA-based Super Resolution accelerator implementation。
+
+請先完整理解以下專案背景、設計哲學、目前進度、coding style、verification flow、memory layout、以及使用者偏好。
+
+============================================================
+【專案核心目標】
+============================================================
+
+目標是：
+
+將輕量化 Single Image Super Resolution (SISR) 模型，
+以 hardware-friendly 方式部署到 FPGA。
+
+目前 focus：
+- RTL implementation
+- fixed-point quantization datapath
+- TFLite INT8 deployment flow
+- PixelShuffle-based SR reconstruction
+- hardware-readable CNN datapath
+- golden verified accelerator build flow
+
+不是：
+- 高抽象 AI framework
+- 高度 reusable software architecture
+- 過度 optimization 的 accelerator research prototype
+
+============================================================
+【模型架構】
+============================================================
+
+目前 SR model：
+
+Input
+→ Conv1 (3x3, Cin=1, Cout=8, ReLU)
+→ Conv3 (1x1, Cin=8, Cout=4)
+→ PixelShuffle x2
+→ clipped_relu (0~1)
+→ output
+
+scale = 2。
+
+Tensor shape：
+
+input:
+(8,8,1)
+
+Conv1 output:
+(8,8,8)
+
+Conv3 output:
+(8,8,4)
+
+PixelShuffle output:
+(16,16,1)
+
+============================================================
+【目前完成進度】
+============================================================
+
+Phase 1：
+sr_requantize
+已完成並 verified。
+
+公式：
+
+tmp = acc * M0 + M1
+
+rounded = (tmp >>> 32)
+
+if tmp[31] == 1:
+    rounded = rounded + 1
+
+q_out = clamp(rounded, -128, 127)
+
+目前保持：
+signed 64-bit behavior
+以 match TFLite/Python golden。
+
+============================================================
+
+Phase 2：
+sr_conv1x1_cin8_cout4_mac
+已完成並 verified。
+
+功能：
+signed int8 multi-channel MAC。
+
+數學：
+
+acc[co] =
+    sum_{ci=0..7}
+        input[ci] * weight[co][ci]
+
+Cin=8
+Cout=4
+
+目前：
+fully parallel readable datapath。
+
+不是：
+systolic array。
+
+============================================================
+
+Phase 2.5：
+sr_conv1x1_cin8_cout4_block
+(MAC + requant)
+已完成並 verified。
+
+compare：
+conv3_out_int8.mem
+
+結果：
+mismatch count = 0
+max abs diff = 0
+
+============================================================
+【目前正在做】
+============================================================
+
+Phase 3：
+PixelShuffle x2 RTL。
+
+目前策略：
+
+先做：
+functional datapath verification。
+
+不要：
+memory subsystem integration。
+
+============================================================
+【PixelShuffle 設計哲學】
+============================================================
+
+目前：
+PixelShuffle semantic
+與
+BRAM/IP integration
+必須拆開。
+
+原因：
+
+目前 priority 是：
+mapping correctness。
+
+不是：
+AXI / BRAM / FSM integration。
+
+============================================================
+
+PixelShuffle 數學：
+
+(8,8,4)
+→
+(16,16,1)
+
+mapping：
+
+c0 → out[2y  ][2x  ]
+c1 → out[2y  ][2x+1]
+c2 → out[2y+1][2x  ]
+c3 → out[2y+1][2x+1]
+
+PixelShuffle 不改變數值，
+只改變位置。
+
+元素總數不變：
+
+8*8*4 = 16*16*1 = 256
+
+============================================================
+【Coding Style（非常重要）】
+============================================================
+
+使用者非常重視：
+
+1. readable RTL
+2. clear datapath
+3. hardware intuition
+4. debugability
+
+============================================================
+
+目前專案：
+
+只使用：
+Verilog
+
+不要使用：
+SystemVerilog。
+
+禁止：
+- logic
+- always_comb
+- always_ff
+- interface
+- typedef
+- enum
+- packed array port
+- struct
+
+============================================================
+
+Coding style：
+接近：
+
+ref\conv3x3_cin3_cout3_visual_demo\verilog\conv3x3_cin3_cout3_visual_demo.v
+
+風格。
+
+============================================================
+
+使用者偏好：
+
+不要：
+- 高度抽象 reusable framework
+- 過度 parameterized generate architecture
+- systolic array
+- PE mesh
+- accelerator research style code
+
+希望：
+像 block diagram 一樣的 datapath RTL。
+
+============================================================
+
+好的風格：
+
+input
+→ multiply
+→ partial sum
+→ accumulator
+
+訊號名稱清楚：
+mul00
+psum0
+acc0
+
+每條 datapath 可見。
+
+============================================================
+【Verification Philosophy】
+============================================================
+
+本專案：
+非常重視 golden verification。
+
+每個 phase：
+都必須：
+
+diff = 0
+
+============================================================
+
+verification flow：
+
+readmemh / fopen / fscanf
+→ RTL
+→ compare golden tensor
+
+============================================================
+
+目前 golden tensor：
+
+conv1_out_int8.mem
+conv3_acc_int32.mem
+conv3_out_int8.mem
+pixel_shuffle_out_int8.mem
+
+============================================================
+
+目前 .mem：
+是 signed decimal text。
+
+因此：
+
+使用：
+$fopen + $fscanf
+
+不是：
+$readmemh。
+
+============================================================
+【Memory Layout】
+============================================================
+
+Tensor flatten layout：
+NHWC。
+
+============================================================
+
+例如：
+
+Conv3 input：
+shape = (8,8,8)
+
+flatten：
+
+pixel0:
+[c0,c1,c2,c3,c4,c5,c6,c7]
+
+pixel1:
+[c0,c1,c2,c3,c4,c5,c6,c7]
+
+...
+
+============================================================
+
+Conv3 output：
+shape = (8,8,4)
+
+flatten：
+
+pixel0:
+[c0,c1,c2,c3]
+
+pixel1:
+[c0,c1,c2,c3]
+
+============================================================
+【目前 Accelerator Build Strategy】
+============================================================
+
+採用：
+
+後半段 reconstruction path
+先 build。
+
+順序：
+
+1. requant
+2. Conv3 MAC
+3. Conv3 + requant
+4. PixelShuffle
+5. 最後才做 Conv1
+
+============================================================
+
+原因：
+
+Conv1 才是真正大魔王。
+
+Conv1 包含：
+- line buffer
+- padding
+- sliding window
+- row/col tracking
+- streaming
+- spatial reuse
+
+因此：
+memory-aware architecture
+會在 Conv1 才開始重點投入。
+
+============================================================
+【PixelShuffle 現階段不要做】
+============================================================
+
+不要：
+- BRAM IP
+- blk_mem_gen
+- AXI
+- DMA
+- output buffer IP
+- frame_done FSM
+- streaming optimization
+
+目前：
+只做 mapping correctness。
+
+============================================================
+【HTML Documentation】
+============================================================
+
+使用者非常重視：
+HTML 工程紀錄。
+
+所有 phase：
+都希望有：
+
+html/phaseX_xxx.html
+
+============================================================
+
+HTML 重點：
+
+1. architecture
+2. tensor shape
+3. tensor mapping
+4. 數學公式
+5. datapath
+6. memory layout
+7. verification strategy
+8. golden compare
+9. PASS condition
+10. 為什麼這樣設計
+
+============================================================
+
+HTML 風格：
+
+工程紀錄導向，
+方便日後：
+
+- 快速複習
+- 快速回到狀態
+- 理解 code 與數學如何對應硬體
+
+============================================================
+【目前使用的 AI workflow】
+============================================================
+
+目前使用：
+GPT-5.5 + 智能中。
+
+原因：
+
+需要：
+穩定 obey spec 的 RTL implementation。
+
+不是：
+高 abstraction architecture exploration。
+
+============================================================
+【未來接手時請遵守】
+============================================================
+
+1. 不要突然改 coding style
+2. 不要突然使用 SystemVerilog
+3. 不要突然 framework 化
+4. 不要突然做高 abstraction reusable architecture
+5. 不要跳過 golden verification
+6. 不要把 memory subsystem 和 semantic verification 混在一起
+7. 每個 phase 必須可獨立 verify
+8. 所有 RTL 必須 readable/debuggable
+9. 優先 correctness，不是 optimization
+
+============================================================
+【目前專案核心哲學】
+============================================================
+
+這不是：
+
+「做一個最 fancy accelerator」。
+
+而是：
+
+「一步一步 build 出：
+可理解、可驗證、hardware-friendly 的 SR accelerator。」
+
+============================================================
+【接手後的第一優先】
+============================================================
+
+先理解：
+目前 phase 的 verification contract。
+
+因為：
+
+golden diff=0
+是本專案最重要的 correctness 標準。

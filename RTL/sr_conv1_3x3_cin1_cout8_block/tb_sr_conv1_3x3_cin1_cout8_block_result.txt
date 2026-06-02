@@ -1,0 +1,12 @@
+sr_conv1_3x3_cin1_cout8_block verification result
+==================================================
+Purpose : Conv1 3x3 window + MAC + 8x requant
+Input   : input_int8_for_core.mem, shape (8,8,1)
+Weight  : conv1_weight.mem, shape [8,3,3,1]
+M0/M1   : conv1_m0.mem / conv1_m1.mem, 8 channels
+Golden  : conv1_out_int8.mem, shape (8,8,8)
+No separate ReLU block; Conv1 fused ReLU has output zero_point = -128
+
+mismatch count = 0
+max abs diff   = 0
+PASS

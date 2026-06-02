@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>RTL_sys Accelerator System Architecture</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>RTL_sys</h1>
+      <p class="small">文件位置：<code>model_lite/sr_core/html/RTL_sys_index.html</code></p>
+      <p class="small">工作區：<code>model_lite/sr_core/RTL_sys/</code></p>
+      <p>
+        <strong>Accelerator System Architecture Workspace</strong>。這裡放的是 Phase7 end-to-end PASS 之後的
+        system architecture refactor，不直接修改 <code>RTL/</code> verified module library。
+      </p>
+    </header>
+
+    <section>
+      <h2>1. Workspace 定位</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>區域</th>
+            <th>定位</th>
+            <th>狀態</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Module RTL</td>
+            <td>已驗證通過的 module library，保留在 <code>model_lite/sr_core/RTL/</code>。</td>
+            <td>Verified</td>
+          </tr>
+          <tr>
+            <td>System RTL</td>
+            <td>新的 architecture refactor 工作區，包含 weight memory、streaming、BRAM、AXI、DMA。</td>
+            <td>Developing</td>
+          </tr>
+          <tr>
+            <td>Deployment</td>
+            <td>未來的 Vivado block design、PS-PL integration、完整 accelerator deployment。</td>
+            <td>Future</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="decision">
+        <p>
+          規則：<code>RTL/</code> 是 Golden RTL Version；<code>RTL_sys/</code> 是新的 system architecture workspace。
+          新的架構重構不要直接改 verified RTL。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. 目前 Milestone</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Milestone</th>
+            <th>內容</th>
+            <th>狀態</th>
+            <th>文件</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Milestone 3</td>
+            <td>Phase8 Weight Memory Architecture Refactor</td>
+            <td>In Progress</td>
+            <td><a href="phase8_index.html">phase8_index.html</a></td>
+          </tr>
+          <tr>
+            <td>Milestone 3.1</td>
+            <td>Phase8.1 Weight Memory Self-Check</td>
+            <td>PASS</td>
+            <td><a href="phase8_1_memory_mapping_selfcheck.html">phase8_1_memory_mapping_selfcheck.html</a></td>
+          </tr>
+          <tr>
+            <td>Milestone 3.2</td>
+            <td>Phase8.2 Memory-Oriented Top Wrapper</td>
+            <td>PASS</td>
+            <td><a href="phase8_2_memory_oriented_wrapper.html">phase8_2_memory_oriented_wrapper.html</a></td>
+          </tr>
+          <tr>
+            <td>Milestone 3.3</td>
+            <td>Phase8.3 Vivado BRAM Parameter Architecture</td>
+            <td>PASS / Analyzed</td>
+            <td>
+              <a href="phase8_3_vivado_bram.html">phase8_3_vivado_bram.html</a><br>
+              <a href="phase8_3_vivado_bram_gui.html">phase8_3_vivado_bram_gui.html</a>
+            </td>
+          </tr>
+          <tr>
+            <td>Milestone 3.4</td>
+            <td>Phase8.4 ROM-backed Wrapper</td>
+            <td>Analysis Only</td>
+            <td><a href="phase8_4_rom_backed_wrapper.html">phase8_4_rom_backed_wrapper.html</a></td>
+          </tr>
+          <tr>
+            <td>Milestone 3.4a</td>
+            <td>Phase8.4a ROM Timing Analysis</td>
+            <td>PASS</td>
+            <td><a href="phase8_4a_rom_timing_analysis.html">phase8_4a_rom_timing_analysis.html</a></td>
+          </tr>
+          <tr>
+            <td>Milestone 3.4b</td>
+            <td>Phase8.4b ROM Preload Wrapper</td>
+            <td><strong>PASS</strong></td>
+            <td><a href="phase8_4b_rom_preload_wrapper.html">phase8_4b_rom_preload_wrapper.html</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>3. Architecture Roadmap</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Phase</th>
+            <th>目標</th>
+            <th>狀態</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Phase8</td>
+            <td>Weight Memory Refactor</td>
+            <td>In Progress</td>
+          </tr>
+          <tr>
+            <td>Phase8.1</td>
+            <td>Memory Mapping Self-Check</td>
+            <td>PASS</td>
+          </tr>
+          <tr>
+            <td>Phase8.2</td>
+            <td>Memory-Oriented Top Wrapper</td>
+            <td>PASS</td>
+          </tr>
+          <tr>
+            <td>Phase8.3</td>
+            <td>Vivado BRAM Parameter Architecture</td>
+            <td>ROM IP readback PASS</td>
+          </tr>
+          <tr>
+            <td>Phase8.4</td>
+            <td>ROM-backed Wrapper Integration</td>
+            <td>Analysis Only</td>
+          </tr>
+          <tr>
+            <td>Phase8.4a</td>
+            <td>ROM Timing Analysis</td>
+            <td>PASS</td>
+          </tr>
+          <tr>
+            <td>Phase8.4b</td>
+            <td>ROM Preload Wrapper Integration</td>
+            <td>PASS</td>
+          </tr>
+          <tr>
+            <td>Phase9</td>
+            <td>Streaming Architecture Refactor</td>
+            <td>Planned</td>
+          </tr>
+          <tr>
+            <td>Phase10</td>
+            <td>BRAM Integration</td>
+            <td>Planned</td>
+          </tr>
+          <tr>
+            <td>Phase11</td>
+            <td>AXI-Lite Integration</td>
+            <td>Planned</td>
+          </tr>
+          <tr>
+            <td>Phase12</td>
+            <td>DMA Integration</td>
+            <td>Planned</td>
+          </tr>
+          <tr>
+            <td>Phase13</td>
+            <td>PS-PL System Integration</td>
+            <td>Planned</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>4. Phase8.3 目前重點</h2>
+      <p>
+        Phase8.3 把 Phase8 的 memory-style parameter organization 推進到 Vivado Block Memory Generator IP。
+        目前已建立六個 ROM IP prototype：
+      </p>
+      <pre>conv1_weight_rom
+conv3_weight_rom
+conv1_m0_rom
+conv1_m1_rom
+conv3_m0_rom
+conv3_m1_rom</pre>
+      <p>
+        目前仍不做 AXI、DMA、PS-PL。下一步才會研究如何把 parameter ROM bank 接回 top wrapper，
+        並處理 synchronous read latency。
+      </p>
+    </section>
+
+    <section>
+      <h2>5. 開發規則</h2>
+      <ul>
+        <li>不要修改 <code>model_lite/sr_core/RTL/</code> 內的 verified modules。</li>
+        <li>新的 architecture refactor 放在 <code>model_lite/sr_core/RTL_sys/</code>。</li>
+        <li>每個 Phase 都要同步建立 HTML 文件，記錄設計理由、驗證方式、遇到的問題、下一步。</li>
+        <li>中文 HTML 一律保留 <code>&lt;meta charset="utf-8"&gt;</code>，避免整檔 PowerShell rewrite。</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

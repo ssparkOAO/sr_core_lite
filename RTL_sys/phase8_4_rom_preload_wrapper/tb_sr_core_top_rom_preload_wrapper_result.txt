@@ -1,0 +1,9 @@
+Phase8.4b sr_core_top_rom_preload_wrapper verification result
+==============================================================
+Purpose : Vivado ROM IP -> preload FSM -> parameter register bank -> verified sr_core_top
+Golden  : output_uint8.mem
+
+preload_done asserted
+mismatch count = 0
+max abs diff   = 0
+PASS

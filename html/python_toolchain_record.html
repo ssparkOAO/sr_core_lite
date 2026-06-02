@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>SR Core Python Toolchain 建立紀錄</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>SR Core Python Toolchain 建立紀錄</h1>
+      <p class="small">主題：TFLite 參數提取、golden 產生、Vivado hex 轉檔</p>
+      <p class="small">回到：<a href="index.html">SR Core 最小功能設計紀錄</a></p>
+      <p>
+        這份文件記錄目前 SR Core 專案使用的 Python 工具。目標是讓模型參數、golden tensor、
+        RTL testbench、Vivado BRAM 初始化檔之間有清楚分工。
+      </p>
+    </header>
+
+    <section>
+      <h2>1. 目前已建立的工具</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>工具</th>
+            <th>用途</th>
+            <th>輸出</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>extract_sr_tflite_params.py</code></td>
+            <td>從 TFLite INT8 model 抽出 weight、bias、scale、zero point、M0、M1。</td>
+            <td><code>generated/*.mem</code>, <code>generated/*.coe</code>, <code>sr_tflite_params.json</code></td>
+          </tr>
+          <tr>
+            <td><code>sr_core_golden.py</code></td>
+            <td>重建 runtime-verified quantized flow，產生逐層 golden tensor。</td>
+            <td><code>generated/golden/*.mem</code></td>
+          </tr>
+          <tr>
+            <td><code>tflite_flatbuffer.py</code></td>
+            <td>簡化 TFLite flatbuffer parser，供參數抽取工具使用。</td>
+            <td>共用 Python module</td>
+          </tr>
+          <tr>
+            <td><code>convert_generated_to_vivado_hex.py</code></td>
+            <td>把 signed decimal <code>generated/*.mem</code> 轉成 Vivado / BRAM 可用的 two's-complement hex。</td>
+            <td><code>generated_vivado_hex/*.memh</code>, <code>generated_vivado_hex/*.coe</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>2. 常用執行順序</h2>
+      <p>一般重新產生資料時，建議順序如下：</p>
+      <pre>python model_lite\sr_core\tools\extract_sr_tflite_params.py
+python model_lite\sr_core\tools\sr_core_golden.py --height 8 --width 8 --seed 1
+python model_lite\sr_core\tools\convert_generated_to_vivado_hex.py</pre>
+      <p>
+        前兩步建立 decimal parameter / golden；第三步把它們轉成 Vivado-friendly hex。
+      </p>
+    </section>
+
+    <section>
+      <h2>3. generated 與 generated_vivado_hex 的分工</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>資料夾</th>
+            <th>格式</th>
+            <th>用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>generated/</code></td>
+            <td>signed decimal text</td>
+            <td>Python 檢查、Verilog testbench、人工閱讀與 debug。</td>
+          </tr>
+          <tr>
+            <td><code>generated_vivado_hex/</code></td>
+            <td>two's-complement hex <code>.memh</code> / <code>.coe</code></td>
+            <td>Vivado Block Memory Generator、BRAM init、<code>$readmemh</code>。</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="decision">
+        <p>
+          原則：<code>generated/</code> 是 golden source；<code>generated_vivado_hex/</code>
+          是由工具轉出來的硬體初始化格式，不手動修改。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>4. 新工具怎麼用</h2>
+      <p>工具位置：</p>
+      <pre>model_lite/sr_core/tools/convert_generated_to_vivado_hex.py</pre>
+      <p>在專案根目錄執行：</p>
+      <pre>cd C:\M11413047\codex\final_proj
+python model_lite\sr_core\tools\convert_generated_to_vivado_hex.py</pre>
+      <p>完成後檢查：</p>
+      <pre>model_lite/sr_core/generated_vivado_hex/conversion_verify_result.txt</pre>
+      <p>目前驗證結果：</p>
+      <pre>total files=16
+total values=2316
+total mismatch=0
+PASS</pre>
+      <p>
+        詳細說明請看：
+        <a href="tool_convert_generated_to_vivado_hex.html">tool_convert_generated_to_vivado_hex.html</a>
+      </p>
+    </section>
+
+    <section>
+      <h2>5. Golden Shape 檢查結果</h2>
+      <p>目前使用 <code>8x8</code> LR patch 做 RTL verification：</p>
+      <pre>LR input:        8 x 8 x 1
+Conv1 output:    8 x 8 x 8
+Conv3 output:    8 x 8 x 4
+PixelShuffle:   16 x 16 x 1
+Final output:   16 x 16 x 1</pre>
+    </section>
+
+    <section>
+      <h2>6. 對 RTL / Vivado 的意義</h2>
+      <p>
+        RTL module verification 主要吃 <code>generated/</code> 的 decimal golden。
+        Phase8.3 開始引入 Vivado BRAM IP 後，BRAM 初始化改吃
+        <code>generated_vivado_hex/</code> 的 <code>.coe</code>。
+      </p>
+      <pre>generated/*.mem
+    ↓
+convert_generated_to_vivado_hex.py
+    ↓
+generated_vivado_hex/*.coe
+    ↓
+Vivado Block Memory Generator</pre>
+      <p>
+        這樣可以避免把「人類看得懂的數值」和「硬體儲存的 bit pattern」混在同一個資料夾。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

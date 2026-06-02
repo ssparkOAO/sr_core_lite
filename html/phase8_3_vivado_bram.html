@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase8.3 Vivado BRAM Parameter Architecture</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>Phase8.3 Vivado BRAM Parameter Architecture</h1>
+      <p class="small">文件位置：<code>model_lite/sr_core/html/phase8_3_vivado_bram.html</code></p>
+      <p class="small">工作區：<code>model_lite/sr_core/RTL_sys/phase8_3_vivado_bram/</code></p>
+      <p class="small">Vivado project：<code>model_lite/sr_core/vivado/sr_core_bram_pynqz2</code></p>
+      <p>
+        Phase8.3 的目標是把 Phase8.1 / Phase8.2 已驗證過的 memory-style parameter organization，
+        往 Vivado Block Memory Generator IP 推進。這一階段仍然不做 AXI、DMA、PS-PL，也不修改
+        <code>RTL/</code> verified modules。
+      </p>
+      <p>
+        目前已建立六個 parameter ROM prototype：Conv1 weight、Conv3 weight、Conv1 M0、Conv1 M1、Conv3 M0、Conv3 M1。
+      </p>
+    </header>
+
+    <section>
+      <h2>1. Phase8.3 目標</h2>
+      <p>
+        Phase8.2 已經證明：把 weight/M0/M1 放成 internal memory organization 後，仍然可以維持
+        end-to-end PASS。Phase8.3 接著要驗證的是：這些 parameter memory 是否能用 Vivado
+        Block Memory Generator IP 表達，為未來 BRAM-based accelerator architecture 做準備。
+      </p>
+      <div class="decision">
+        <p>
+          本階段重點是 parameter BRAM prototype，不是 deployment。也就是先把固定參數變成可由
+          Vivado IP 管理的 ROM，再逐步思考未來 loader、AXI、DMA 或 PS-PL integration。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. 目前架構</h2>
+      <pre>generated/*.mem
+    ↓
+two's-complement hex COE
+    ↓
+Vivado Block Memory Generator ROM IP
+    ↓
+sr_param_rom_bank
+    ↓
+readback self-check</pre>
+      <p>
+        目前還沒有把 BRAM IP 接進完整 <code>sr_core_top_mem_wrapper</code>。這是刻意的設計：
+        先把 IP 初始化、address mapping、read latency、signed bit pattern 這些問題獨立驗證，
+        避免一開始就和整個 pipeline 混在一起。
+      </p>
+    </section>
+
+    <section>
+      <h2>3. Parameter ROM Prototype 內容</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>IP module</th>
+            <th>資料</th>
+            <th>Width</th>
+            <th>Depth</th>
+            <th>Address mapping</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>conv1_weight_rom</code></td>
+            <td>Conv1 3x3 Cout=8 weight</td>
+            <td>8</td>
+            <td>72</td>
+            <td><code>addr = output_channel * 9 + kernel_tap</code></td>
+          </tr>
+          <tr>
+            <td><code>conv3_weight_rom</code></td>
+            <td>Conv3 1x1 Cin=8 Cout=4 weight</td>
+            <td>8</td>
+            <td>32</td>
+            <td><code>addr = output_channel * 8 + input_channel</code></td>
+          </tr>
+          <tr>
+            <td><code>conv1_m0_rom</code></td>
+            <td>Conv1 requant M0</td>
+            <td>32</td>
+            <td>8</td>
+            <td><code>addr = output_channel</code></td>
+          </tr>
+          <tr>
+            <td><code>conv1_m1_rom</code></td>
+            <td>Conv1 requant M1</td>
+            <td>64</td>
+            <td>8</td>
+            <td><code>addr = output_channel</code></td>
+          </tr>
+          <tr>
+            <td><code>conv3_m0_rom</code></td>
+            <td>Conv3 requant M0</td>
+            <td>32</td>
+            <td>4</td>
+            <td><code>addr = output_channel</code></td>
+          </tr>
+          <tr>
+            <td><code>conv3_m1_rom</code></td>
+            <td>Conv3 requant M1</td>
+            <td>64</td>
+            <td>4</td>
+            <td><code>addr = output_channel</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>4. 使用檔案</h2>
+      <p>來源檔案仍然是 runtime-verified generated parameter：</p>
+      <pre>model_lite/sr_core/generated/conv1_weight.mem
+model_lite/sr_core/generated/conv3_weight.mem
+model_lite/sr_core/generated/conv1_m0.mem
+model_lite/sr_core/generated/conv1_m1.mem
+model_lite/sr_core/generated/conv3_m0.mem
+model_lite/sr_core/generated/conv3_m1.mem</pre>
+      <p>Vivado-friendly hex / COE 會集中放在：</p>
+      <pre>model_lite/sr_core/generated_vivado_hex/</pre>
+      <p>
+        COE 使用 <code>memory_initialization_radix=16</code>，並把 signed decimal value 轉成固定寬度
+        two's-complement hex。這樣 Vivado BRAM 存的是正確 bit pattern，RTL 端再用 signed wire 解讀。
+        <code>RTL_sys/phase8_3_vivado_bram/</code> 只保存 BRAM prototype RTL、Tcl、simulation，不再作為唯一資料來源。
+      </p>
+      <p>
+        轉檔工具使用方式請看：
+        <a href="tool_convert_generated_to_vivado_hex.html">tool_convert_generated_to_vivado_hex.html</a>
+      </p>
+    </section>
+
+    <section>
+      <h2>5. 使用 RTL</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>檔案</th>
+            <th>用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>rtl/sr_param_rom_bank.v</code></td>
+            <td>統一包裝六個 Vivado parameter ROM IP，提供 signed read data。</td>
+          </tr>
+          <tr>
+            <td><code>sim/param_rom_behavioral_models.v</code></td>
+            <td>快速模擬用的 behavioral ROM model，介面對齊 BMG IP。</td>
+          </tr>
+          <tr>
+            <td><code>sim/tb_sr_param_rom_bank.v</code></td>
+            <td>讀 generated .mem 當 golden，逐地址比對 ROM readback。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>6. 使用 Tcl</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Tcl</th>
+            <th>用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>tcl/create_sr_core_bram_pynqz2.tcl</code></td>
+            <td>建立 Vivado project <code>sr_core_bram_pynqz2</code>，並產生六個 Block Memory Generator ROM IP。</td>
+          </tr>
+          <tr>
+            <td><code>tcl/run_bram_param_bank_behavioral_sim.tcl</code></td>
+            <td>用 behavioral ROM model 跑 readback self-check，先確認 mapping 與 signed bit pattern。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>7. ROM 需要 enable 嗎？</h2>
+      <p>
+        不一定需要。Vivado Block Memory Generator 的 native ROM 可以不要 enable，也可以保留
+        <code>ena</code> pin。如果你的設計是每個 clock 都要依照 address 讀資料，可以把
+        <code>ena</code> 直接接成 <code>1'b1</code>，行為上就是「想讀就讀」。
+      </p>
+      <p>
+        目前 <code>sr_param_rom_bank</code> 保留 <code>*_en</code> 的原因是：
+      </p>
+      <ul>
+        <li>未來 controller 可以明確標示哪一拍是有效 read。</li>
+        <li>和 BRAM/ROM synchronous read latency 對齊時，debug waveform 比較清楚。</li>
+        <li>若未來要降低不必要的 switching，可以用 enable 關掉不讀的 port。</li>
+      </ul>
+      <div class="decision">
+        <p>
+          結論：<code>en</code> 不是功能上必須，但保留它比較適合後續 system architecture。
+          如果某一版想簡化，可以在 wrapper 內把所有 <code>*_en</code> tie high。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>8. 驗證流程與結果</h2>
+      <pre>TB
+    ↓
+讀 generated/*.mem 作為 golden
+    ↓
+透過 sr_param_rom_bank 逐 address 讀出 ROM data
+    ↓
+比對 signed value
+    ↓
+輸出 tb_sr_param_rom_bank_result.txt</pre>
+      <p>目前 behavioral readback self-check 結果：</p>
+      <pre>conv1_weight mismatch count = 0
+conv3_weight mismatch count = 0
+conv1_m0 mismatch count = 0
+conv1_m1 mismatch count = 0
+conv3_m0 mismatch count = 0
+conv3_m1 mismatch count = 0
+total mismatch count = 0
+PASS</pre>
+      <p>
+        Vivado project 也已建立完成，project 內有 6 個 BMG ROM IP。這代表 Phase8.3 已完成
+        parameter ROM prototype 的第一步：IP 可以建立，COE 可以掛載，mapping readback 可以驗證。
+      </p>
+    </section>
+
+    <section>
+      <h2>9. 遇到的問題與學習</h2>
+      <h3>9.1 signed decimal COE 不如 two's-complement hex 穩定</h3>
+      <p>
+        generated 內原本有 signed decimal COE，但 BRAM 實際儲存的是 bit pattern。為了避免 Vivado 對負數
+        COE 的解析差異，本階段改產生固定 width 的 two's-complement hex COE。
+      </p>
+
+      <h3>9.2 <code>Load_Init_File</code> 和 <code>Coe_File</code> 要一起設定</h3>
+      <p>
+        Vivado Block Memory Generator 會立即驗證參數。如果先打開 <code>Load_Init_File</code>，但還沒指定
+        <code>Coe_File</code>，會出現 <code>No COE file loaded</code>。最後 Tcl 改成一次性
+        <code>set_property -dict</code>，同時設定兩個欄位。
+      </p>
+
+      <h3>9.3 BMG read latency 要在下一階段明確處理</h3>
+      <p>
+        目前 self-check 已經用 synchronous read timing 驗證。未來接到 wrapper 或 controller 時，
+        必須把 ROM read latency 納入 valid timing，而不是把它當成 combinational memory。
+      </p>
+    </section>
+
+    <section>
+      <h2>10. 目前結論</h2>
+      <div class="decision">
+        <p>
+        Phase8.3 已不只做 Conv1 weight，而是把目前需要的固定參數都建立成 Vivado ROM prototype。
+        參數初始化檔統一由 <code>generated_vivado_hex/</code> 提供，避免每個 architecture phase 複製一份而產生版本落差。
+          下一步可以進入 Phase8.4：把 parameter ROM bank 接到 memory-oriented top wrapper，
+          並處理 read latency / address scheduling。
+        </p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

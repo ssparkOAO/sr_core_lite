@@ -1,0 +1,340 @@
+============================================================
+【目前 generated / golden 檔案系統】
+============================================================
+
+目前專案：
+
+有固定的 generated / golden verification flow。
+
+這些 .mem 檔案：
+是 RTL verification 的 source of truth。
+
+============================================================
+【目前重要 .mem 檔案】
+============================================================
+
+1.
+input_uint8.mem
+
+用途：
+原始 uint8 input image。
+
+shape：
+(H,W,1)
+
+目前：
+8x8。
+
+============================================================
+
+2.
+input_int8_for_core.mem
+
+用途：
+input quantize 後的 int8 tensor。
+
+也就是：
+
+uint8
+→ int8(zero point shifted)
+
+這是：
+Conv1 RTL 的真正 input。
+
+============================================================
+
+3.
+conv1_weight.mem
+
+用途：
+Conv1 3x3 weight。
+
+shape：
+
+[Cout=8][Ky=3][Kx=3][Cin=1]
+
+flatten 後：
+依 Python export layout。
+
+============================================================
+
+4.
+conv1_acc_int32.mem
+
+用途：
+Conv1 MAC 後、
+尚未 requant 的 int32 accumulator golden。
+
+這是：
+
+sr_conv3x3_cin1_cout8_mac
+
+的 verification golden。
+
+============================================================
+
+5.
+conv1_m0.mem
+
+用途：
+Conv1 requant M0。
+
+每個 output channel 一個值。
+
+共：
+8 個。
+
+============================================================
+
+6.
+conv1_m1.mem
+
+用途：
+Conv1 requant M1。
+
+每個 output channel 一個值。
+
+共：
+8 個。
+
+============================================================
+
+7.
+conv1_out_int8.mem
+
+用途：
+Conv1 requant + ReLU 後的 output tensor。
+
+shape：
+
+(H,W,8)
+
+目前：
+(8,8,8)
+
+flatten layout：
+NHWC。
+
+這同時也是：
+
+Conv3 的 activation input。
+
+============================================================
+
+8.
+conv3_weight.mem
+
+用途：
+Conv3 1x1 weight。
+
+shape：
+
+[Cout=4][Cin=8]
+
+flatten：
+cout-major。
+
+例如：
+
+w00~w07
+→ output channel 0
+
+w10~w17
+→ output channel 1
+
+============================================================
+
+9.
+conv3_acc_int32.mem
+
+用途：
+Conv3 MAC 後、
+尚未 requant 的 int32 accumulator golden。
+
+這是：
+
+sr_conv1x1_cin8_cout4_mac
+
+的 verification golden。
+
+============================================================
+
+10.
+conv3_m0.mem
+
+用途：
+Conv3 requant M0。
+
+每個 output channel 一個值。
+
+共：
+4 個。
+
+============================================================
+
+11.
+conv3_m1.mem
+
+用途：
+Conv3 requant M1。
+
+每個 output channel 一個值。
+
+共：
+4 個。
+
+============================================================
+
+12.
+conv3_out_int8.mem
+
+用途：
+Conv3 requant 後的 int8 tensor。
+
+shape：
+
+(H,W,4)
+
+目前：
+(8,8,4)
+
+這同時也是：
+
+PixelShuffle 的 input tensor。
+
+============================================================
+
+13.
+pixel_shuffle_out_int8.mem
+
+用途：
+PixelShuffle x2 後的 HR output tensor。
+
+shape：
+
+(16,16,1)
+
+flatten layout：
+row-major。
+
+這是：
+
+sr_pixel_shuffle_x2
+
+的 verification golden。
+
+============================================================
+【目前 .mem 檔案格式】
+============================================================
+
+目前 .mem：
+
+是：
+
+signed decimal text。
+
+例如：
+
+-128
+18
+14
+-9
+
+============================================================
+
+因此：
+
+目前 verification：
+
+使用：
+
+$fopen
++
+$fscanf
+
+而不是：
+
+$readmemh。
+
+============================================================
+【目前 golden verification flow】
+============================================================
+
+目前每個 phase：
+
+都使用：
+
+golden tensor compare。
+
+============================================================
+
+verification flow：
+
+golden .mem
+→ testbench read
+→ RTL output
+→ compare
+→ mismatch count
+→ PASS / FAIL
+
+============================================================
+
+目前最重要的 correctness 標準：
+
+mismatch count = 0
+
+max abs diff = 0
+
+============================================================
+【目前 runtime verified 狀態】
+============================================================
+
+目前：
+
+Python runtime dump
+與
+TFLite intermediate tensor
+
+已對齊。
+
+因此：
+
+目前 generated .mem：
+可信。
+
+不需要再懷疑：
+M0/M1 或 tensor export correctness。
+
+============================================================
+【目前 tensor flatten 規則】
+============================================================
+
+目前 tensor flatten：
+
+採用：
+
+NHWC。
+
+============================================================
+
+例如：
+
+(H,W,8)
+
+flatten 後：
+
+pixel0:
+[c0,c1,c2,c3,c4,c5,c6,c7]
+
+pixel1:
+[c0,c1,c2,c3,c4,c5,c6,c7]
+
+============================================================
+
+這個 flatten 規則：
+
+非常重要。
+
+未來：
+
+不要隨意改變。

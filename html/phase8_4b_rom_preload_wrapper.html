@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase8.4b ROM Preload Wrapper</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="phase8_4a_rom_timing_analysis.html">Phase8.4a Timing</a>
+    </nav>
+
+    <section>
+      <h1>Phase8.4b ROM Preload Wrapper</h1>
+      <p class="small">文件位置：<code>model_lite/sr_core/html/phase8_4b_rom_preload_wrapper.html</code></p>
+      <p class="small">RTL 位置：<code>model_lite/sr_core/RTL_sys/phase8_4_rom_preload_wrapper/</code></p>
+      <p>
+        本階段把 Phase8.3 已建立的 Vivado BMG ROM 參數來源，正式接到 memory-oriented top wrapper。
+        目標不是只證明 ROM 會吐資料，而是驗證：
+      </p>
+      <pre>Vivado ROM IP
+-> preload FSM
+-> parameter register bank
+-> verified RTL pipeline
+-> output_uint8.mem</pre>
+      <div class="decision">
+        <p>
+          Phase8.4b 結果：<strong>PASS</strong>。
+          <code>mismatch count = 0</code>，<code>max abs diff = 0</code>。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>1. Phase8.4b 目標</h2>
+      <p>
+        Phase8.2 使用 behavioral register memory 直接保存 weight、M0、M1。
+        Phase8.4b 將來源替換成 ROM IP 讀出，再 preload 到 register bank，最後餵給已驗證的
+        <code>sr_core_top</code>。
+      </p>
+      <table>
+        <thead>
+          <tr><th>項目</th><th>Phase8.2</th><th>Phase8.4b</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>參數來源</td><td>TB 直接寫入 wrapper memory</td><td>Vivado ROM IP preload</td></tr>
+          <tr><td>ROM latency</td><td>沒有</td><td>1 clock，需要 FSM 對齊</td></tr>
+          <tr><td>datapath</td><td>verified RTL</td><td>同一組 verified RTL，不修改</td></tr>
+          <tr><td>驗證目標</td><td>memory-style wrapper PASS</td><td>ROM preload 後 end-to-end PASS</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>2. 為什麼不每次都從 ROM 取參數？</h2>
+      <p>
+        Conv1 MAC 和 Conv3 MAC 目前是清楚、平行、教學型 datapath。
+        如果每個 MAC 運算點都即時從 ROM 取 weight，會立刻遇到兩個問題：
+      </p>
+      <ul>
+        <li>Vivado BMG ROM 是 synchronous read，address 送出後下一拍 data 才有效。</li>
+        <li>Conv1 一次需要 72 個 weight、Conv3 一次需要 32 個 weight，直接即時讀 ROM 會讓 MAC timing 和 control 複雜化。</li>
+      </ul>
+      <p>
+        因此本階段採用 preload：啟動 core 前，先把 ROM 內容完整搬到 parameter register bank。
+        這樣後面的 Conv1 / Conv3 / requant 還能維持 Phase7 已驗證的接口與行為。
+      </p>
+    </section>
+
+    <section>
+      <h2>3. ROM Latency 問題</h2>
+      <p>
+        Phase8.4a 已確認 Vivado BMG ROM 的 read latency 是 1 clock。
+        也就是：
+      </p>
+      <pre>cycle N:
+  rom_en   = 1
+  rom_addr = A
+
+cycle N+1:
+  rom_dout = mem[A]</pre>
+      <p>
+        所以 preload FSM 不能用 same-cycle data 思維。
+        正確流程要拆成送 address、等待 ROM、擷取 data。
+      </p>
+    </section>
+
+    <section>
+      <h2>4. Preload FSM 設計</h2>
+      <p>
+        本階段的 FSM 使用明確狀態，不用硬編碼 delay，也不假設 data 同拍有效。
+      </p>
+      <pre>IDLE
+  -> C1W_SEND
+  -> C1W_WAIT
+  -> C1W_CAPTURE
+  -> C3W_SEND
+  -> C3W_WAIT
+  -> C3W_CAPTURE
+  -> C1M_SEND
+  -> C1M_WAIT
+  -> C1M_CAPTURE
+  -> C3M_SEND
+  -> C3M_WAIT
+  -> C3M_CAPTURE
+  -> DONE</pre>
+      <p>
+        <code>preload_done</code> assert 後，wrapper 才允許 <code>core_start</code> 進入 verified
+        <code>sr_core_top</code>。這避免 core 在參數尚未載入完成時開始計算。
+      </p>
+    </section>
+
+    <section>
+      <h2>5. Parameter Register Bank Organization</h2>
+      <table>
+        <thead>
+          <tr><th>Register Bank</th><th>Entries</th><th>來源 ROM</th><th>用途</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>conv1_weight_mem</code></td><td>72</td><td><code>conv1_weight_rom</code></td><td>Conv1 3x3 Cout=8 weight</td></tr>
+          <tr><td><code>conv3_weight_mem</code></td><td>32</td><td><code>conv3_weight_rom</code></td><td>Conv3 1x1 Cin=8 Cout=4 weight</td></tr>
+          <tr><td><code>conv1_m0_mem</code></td><td>8</td><td><code>conv1_m0_rom</code></td><td>Conv1 requant M0</td></tr>
+          <tr><td><code>conv1_m1_mem</code></td><td>8</td><td><code>conv1_m1_rom</code></td><td>Conv1 requant M1</td></tr>
+          <tr><td><code>conv3_m0_mem</code></td><td>4</td><td><code>conv3_m0_rom</code></td><td>Conv3 requant M0</td></tr>
+          <tr><td><code>conv3_m1_mem</code></td><td>4</td><td><code>conv3_m1_rom</code></td><td>Conv3 requant M1</td></tr>
+        </tbody>
+      </table>
+      <p>
+        Weight、M0、M1 都是固定參數，所以不需要額外設計 register flush 或 clear。
+        重新執行 preload 時直接覆寫 register bank 即可。
+      </p>
+    </section>
+
+    <section>
+      <h2>6. Preload Timing Diagram</h2>
+      <pre>Cycle      0        1          2          3
+Action     SEND     WAIT       CAPTURE    NEXT
+ROM en     1        0          0          -
+ROM addr   A        A          A          A+1
+ROM dout   old      mem[A]     mem[A]     -
+Reg bank   hold     hold       write A    -</pre>
+      <p>
+        這個 timing 是 Phase8.4b 的核心。
+        只要 address 與 data 沒對齊，weight 或 M0/M1 就會晚一拍寫錯位置，最後 output_uint8 會 mismatch。
+      </p>
+    </section>
+
+    <section>
+      <h2>7. 驗證使用檔案</h2>
+      <table>
+        <thead>
+          <tr><th>檔案</th><th>用途</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>generated_vivado_hex/conv1_weight.memh</code></td><td>Conv1 weight ROM init</td></tr>
+          <tr><td><code>generated_vivado_hex/conv3_weight.memh</code></td><td>Conv3 weight ROM init</td></tr>
+          <tr><td><code>generated_vivado_hex/conv1_m0.memh</code></td><td>Conv1 M0 ROM init</td></tr>
+          <tr><td><code>generated_vivado_hex/conv1_m1.memh</code></td><td>Conv1 M1 ROM init</td></tr>
+          <tr><td><code>generated_vivado_hex/conv3_m0.memh</code></td><td>Conv3 M0 ROM init</td></tr>
+          <tr><td><code>generated_vivado_hex/conv3_m1.memh</code></td><td>Conv3 M1 ROM init</td></tr>
+          <tr><td><code>generated/golden/input_int8_for_core.mem</code></td><td>SR core input</td></tr>
+          <tr><td><code>generated/golden/output_uint8.mem</code></td><td>final golden output</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>8. 驗證流程</h2>
+      <pre>TB
+  -> pulse preload_start
+  -> wait preload_done
+  -> load input_int8_for_core.mem
+  -> pulse core_start
+  -> run full SR pipeline
+  -> collect output_uint8
+  -> compare output_uint8.mem</pre>
+      <p>
+        testbench 仍然只負責外部世界：啟動 preload、餵 input、收集 output、比對 golden。
+        PixelShuffle、Conv1、Conv3、requant、output stage 都仍在 RTL 內完成。
+      </p>
+    </section>
+
+    <section>
+      <h2>9. End-to-End Verification Result</h2>
+      <pre>preload_done asserted
+mismatch count = 0
+max abs diff   = 0
+PASS</pre>
+      <p>
+        這代表 Phase8.4b 已證明：
+        ROM preload 後的 parameter register bank 與 Phase8.2 memory-oriented wrapper 行為一致，
+        並且完整 SR pipeline 對 <code>output_uint8.mem</code> bit-exact。
+      </p>
+    </section>
+
+    <section>
+      <h2>10. 遇到的問題</h2>
+      <ul>
+        <li>前一次模擬失敗不是 datapath mismatch，而是 testbench 與 ROM init file 的相對路徑沿用自 Phase8.3。</li>
+        <li>Phase8.4b 的模擬工作目錄不同，所以需要把 input/golden/result/dump 路徑改成相對於本資料夾。</li>
+        <li>最後改用 Vivado project 產生的 BMG ROM simulation wrapper 重新驗證，並把對應 <code>.mif</code> 初始化檔放在 xsim 工作目錄。</li>
+      </ul>
+      <p>
+        Vivado 的 BMG simulation model 本身仍會顯示 behavioral model 訊息，這是 Xilinx IP 的模擬模型，不是重新手寫的本地 ROM。
+        本次最終 PASS 是用 <code>sr_core_bram_pynqz2.gen/sources_1/ip/*/sim/*.v</code> 這些既有 IP wrapper 跑出的結果。
+      </p>
+    </section>
+
+    <section>
+      <h2>11. What did we learn?</h2>
+      <p>
+        Phase8 的演進重點是逐步把「驗證容易」的架構，改成「未來可部署」的架構：
+      </p>
+      <pre>Behavioral Memory
+-> Vivado ROM IP
+-> Parameter Register Bank
+-> Verified RTL</pre>
+      <p>
+        最大學習是：ROM IP 不是一般組合邏輯查表。
+        只要換成 synchronous ROM，就必須明確管理 address、enable、data valid。
+        先 preload 到 register bank 是目前最穩的方案，因為它保留了所有已 PASS 的 RTL 行為，也為後續 BRAM / AXI / DMA 留出清楚邊界。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,16 @@
+sr_core_top end-to-end verification result
+==================================================
+Flow:
+  input_int8_for_core
+    -> Conv1 block
+    -> feature_mem0
+    -> Conv3 block
+    -> feature_mem1
+    -> PixelShuffle core
+    -> feature_mem2
+    -> OutputStage
+    -> output_uint8
+
+mismatch count = 0
+max abs diff   = 0
+PASS

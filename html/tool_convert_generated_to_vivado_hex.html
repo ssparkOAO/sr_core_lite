@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Tool 使用說明：convert_generated_to_vivado_hex.py</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+    <header>
+      <h1>Tool 使用說明：convert_generated_to_vivado_hex.py</h1>
+      <p class="small">工具位置：<code>model_lite/sr_core/tools/convert_generated_to_vivado_hex.py</code></p>
+      <p class="small">輸出位置：<code>model_lite/sr_core/generated_vivado_hex/</code></p>
+      <p class="small">回到：<a href="index.html">SR Core 最小功能設計紀錄</a></p>
+      <p>
+        這個工具負責把 <code>generated/</code> 內的 signed decimal <code>.mem</code>
+        轉成 Vivado / BRAM 友善的 two's-complement hex 檔案。
+      </p>
+    </header>
+
+    <section>
+      <h2>1. 為什麼需要這個工具</h2>
+      <p>
+        <code>generated/</code> 內的檔案主要是給 Python golden flow 與 Verilog testbench 使用，
+        格式是 signed decimal text，例如：
+      </p>
+      <pre>63
+-32
+31
+-26</pre>
+      <p>
+        但是 Vivado Block Memory Generator 比較適合吃明確的 bit pattern。
+        所以負數不能只看成「-32」這個文字，而要轉成固定 bit width 的 two's-complement hex。
+      </p>
+      <pre>-32 as signed int8  -> E0
+-1  as signed int32 -> FFFFFFFF
+-1  as signed int64 -> FFFFFFFFFFFFFFFF</pre>
+    </section>
+
+    <section>
+      <h2>2. 什麼時候要執行</h2>
+      <p>只要重新產生或修改以下任一資料，就應該重新執行一次：</p>
+      <ul>
+        <li><code>generated/conv1_weight.mem</code></li>
+        <li><code>generated/conv3_weight.mem</code></li>
+        <li><code>generated/conv1_m0.mem</code> / <code>generated/conv1_m1.mem</code></li>
+        <li><code>generated/conv3_m0.mem</code> / <code>generated/conv3_m1.mem</code></li>
+        <li><code>generated/golden/*.mem</code></li>
+      </ul>
+      <div class="decision">
+        <p>
+          簡單規則：只要 <code>generated/</code> 有更新，就重跑這個工具，讓
+          <code>generated_vivado_hex/</code> 跟著同步。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>3. 執行方式</h2>
+      <p>請在專案根目錄執行：</p>
+      <pre>cd C:\M11413047\codex\final_proj
+python model_lite\sr_core\tools\convert_generated_to_vivado_hex.py</pre>
+      <p>執行完成後會產生或更新：</p>
+      <pre>model_lite/sr_core/generated_vivado_hex/</pre>
+    </section>
+
+    <section>
+      <h2>4. 輸出內容</h2>
+      <p>每個來源 <code>.mem</code> 會產生兩種檔案：</p>
+      <table>
+        <thead>
+          <tr>
+            <th>副檔名</th>
+            <th>用途</th>
+            <th>範例</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>.memh</code></td>
+            <td>給 Verilog <code>$readmemh</code> 或 behavioral BRAM model 使用。</td>
+            <td><code>conv1_weight.memh</code></td>
+          </tr>
+          <tr>
+            <td><code>.coe</code></td>
+            <td>給 Vivado Block Memory Generator 的 Load Init File 使用。</td>
+            <td><code>conv1_weight.coe</code></td>
+          </tr>
+        </tbody>
+      </table>
+      <p>輸出會保留原本子資料夾結構：</p>
+      <pre>generated/golden/output_uint8.mem
+    ↓
+generated_vivado_hex/golden/output_uint8.memh
+generated_vivado_hex/golden/output_uint8.coe</pre>
+    </section>
+
+    <section>
+      <h2>5. 位寬與 signed 規則</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>檔案類型</th>
+            <th>Width</th>
+            <th>Signed</th>
+            <th>原因</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>*weight.mem</code></td>
+            <td>8</td>
+            <td>Yes</td>
+            <td>INT8 weight。</td>
+          </tr>
+          <tr>
+            <td><code>*int8*.mem</code></td>
+            <td>8</td>
+            <td>Yes</td>
+            <td>中間 tensor 是 signed int8。</td>
+          </tr>
+          <tr>
+            <td><code>*uint8*.mem</code></td>
+            <td>8</td>
+            <td>No</td>
+            <td>input / final output image domain 是 uint8。</td>
+          </tr>
+          <tr>
+            <td><code>*acc_int32.mem</code>, <code>*bias.mem</code>, <code>*m0.mem</code></td>
+            <td>32</td>
+            <td>Yes</td>
+            <td>accumulator、bias、M0 都用 32-bit signed 解讀。</td>
+          </tr>
+          <tr>
+            <td><code>*m1.mem</code></td>
+            <td>64</td>
+            <td>Yes</td>
+            <td>M1 是 requant offset，使用 signed 64-bit。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>6. 驗證方式</h2>
+      <p>
+        工具不是只負責轉檔，也會自己做 round-trip verification：
+      </p>
+      <pre>decimal value
+    ↓
+two's-complement hex
+    ↓
+依照 width / signed 解回 decimal
+    ↓
+compare original decimal</pre>
+      <p>驗證結果會寫到：</p>
+      <pre>model_lite/sr_core/generated_vivado_hex/conversion_verify_result.txt</pre>
+      <p>目前結果：</p>
+      <pre>total files=16
+total values=2316
+total mismatch=0
+PASS</pre>
+    </section>
+
+    <section>
+      <h2>7. 和 Phase8.3 的關係</h2>
+      <p>
+        Phase8.3 的 Vivado BRAM prototype 會使用 <code>generated_vivado_hex/*.coe</code>
+        作為 Block Memory Generator 的初始化檔。例如：
+      </p>
+      <pre>conv1_weight_bram -> generated_vivado_hex/conv1_weight.coe
+conv3_weight_bram -> generated_vivado_hex/conv3_weight.coe
+conv1_m0_bram     -> generated_vivado_hex/conv1_m0.coe
+conv1_m1_bram     -> generated_vivado_hex/conv1_m1.coe
+conv3_m0_bram     -> generated_vivado_hex/conv3_m0.coe
+conv3_m1_bram     -> generated_vivado_hex/conv3_m1.coe</pre>
+      <p>
+        這樣 <code>generated/</code> 保留人類容易檢查的 decimal golden，
+        <code>generated_vivado_hex/</code> 則專門服務 Vivado / BRAM / <code>$readmemh</code>。
+      </p>
+    </section>
+
+    <section>
+      <h2>8. 注意事項</h2>
+      <ul>
+        <li>不要手動改 <code>generated_vivado_hex/</code>，需要更新時重跑 Python 工具。</li>
+        <li>如果模型、QAT 參數、golden tensor 有重新產生，也要重跑此工具。</li>
+        <li>Vivado BRAM 看到的是 bit pattern，RTL 端要用正確 signed / unsigned 宣告解讀。</li>
+        <li><code>conversion_verify_result.txt</code> 必須是 <code>PASS</code> 才能拿去餵 BRAM IP。</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>
