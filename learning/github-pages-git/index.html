@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GitHub 備份與 GitHub Pages 學習筆記</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a href="../../html/">回到 SR Core HTML</a>
+    <a href="https://github.com/ssparkOAO/sr_core_lite">GitHub Repository</a>
+  </header>
+
+  <main>
+    <section class="hero">
+      <p class="eyebrow">Learning Note</p>
+      <h1>我是怎麼把 sr_core 放到 GitHub，並變成線上 HTML 網站</h1>
+      <p class="lead">
+        這份頁面不是專案紀錄，而是給你複習用的操作筆記。目標是讓你知道每個按鈕、每個指令、每個網址背後的意思。
+      </p>
+    </section>
+
+    <section class="panel">
+      <h2>先說結論</h2>
+      <div class="summary-grid">
+        <article>
+          <h3>Git</h3>
+          <p>負責本機版本管理。它記住每次穩定修改，讓你可以回頭看、比較、復原。</p>
+        </article>
+        <article>
+          <h3>GitHub</h3>
+          <p>負責雲端備份與分享。把本機 Git repository 推上去後，其他電腦也能復原。</p>
+        </article>
+        <article>
+          <h3>GitHub Pages</h3>
+          <p>負責把 repository 裡的 HTML 檔案變成可以用瀏覽器開的網站。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>這次實際做了什麼</h2>
+      <ol class="timeline">
+        <li>
+          <strong>選定 repository 根目錄</strong>
+          <p>我把 Git 管理範圍放在 <code>model_lite/sr_core</code>，因為這裡是核心 RTL、工具、HTML 文件所在的位置。</p>
+        </li>
+        <li>
+          <strong>建立 .gitignore</strong>
+          <p>排除 Vivado 產生物、xsim 暫存檔、log、wdb、Python cache 和本機 backup。這可以避免 GitHub 塞滿不必要的大檔案。</p>
+        </li>
+        <li>
+          <strong>初始化 Git</strong>
+          <pre><code>git init
+git branch -M main</code></pre>
+        </li>
+        <li>
+          <strong>建立第一筆本機備份</strong>
+          <pre><code>git add .
+git commit -m "Initial backup of SR core project"</code></pre>
+        </li>
+        <li>
+          <strong>接上 GitHub 遠端 repository</strong>
+          <pre><code>git remote add origin https://github.com/ssparkOAO/sr_core_lite.git</code></pre>
+        </li>
+        <li>
+          <strong>推送到 GitHub</strong>
+          <pre><code>git push -u origin main</code></pre>
+        </li>
+        <li>
+          <strong>開啟 GitHub Pages</strong>
+          <p>在 GitHub 的 <code>Settings -> Pages</code> 選擇 <code>main</code> branch 與 <code>/ root</code>，GitHub 就會把 repository 根目錄當成網站來源。</p>
+        </li>
+      </ol>
+    </section>
+
+    <section class="panel highlight">
+      <h2>為什麼網址一上去就是這個頁面？</h2>
+      <p>
+        你現在看到的網址是：
+      </p>
+      <pre><code>https://ssparkoao.github.io/sr_core_lite/html/</code></pre>
+      <p>
+        它的意思可以拆成四段：
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>網址片段</th>
+            <th>代表意思</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>ssparkoao.github.io</code></td>
+            <td>GitHub Pages 幫你的帳號建立的網站網域。</td>
+          </tr>
+          <tr>
+            <td><code>/sr_core_lite/</code></td>
+            <td>你的 GitHub repository 名稱。</td>
+          </tr>
+          <tr>
+            <td><code>/html/</code></td>
+            <td>repository 裡面的 <code>html</code> 資料夾。</td>
+          </tr>
+          <tr>
+            <td><code>index.html</code></td>
+            <td>瀏覽器進入資料夾時，網站會自動找這個預設首頁。</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        所以 <code>/html/</code> 其實就是打開 repository 裡的 <code>html/index.html</code>。你看到「SR Core 最小功能設計紀錄」，是因為那個檔案本來就是你的 HTML 入口頁。
+      </p>
+    </section>
+
+    <section class="panel">
+      <h2>以後你自己怎麼更新備份</h2>
+      <p>每次完成一個穩定進度，例如 RTL 模擬通過、HTML 文件更新、Vivado Tcl 流程整理好，就做一次：</p>
+      <pre><code>cd C:\M11413047\codex\final_proj\model_lite\sr_core
+git status
+git add .
+git commit -m "Update phase8 ROM preload notes"
+git push</code></pre>
+      <p>重點不是每天固定 commit，而是每次「值得回復到這個狀態」時 commit。</p>
+    </section>
+
+    <section class="panel">
+      <h2>三個常見情境</h2>
+      <div class="cards">
+        <article>
+          <h3>只想備份</h3>
+          <p>做完穩定進度後，使用 <code>git add</code>、<code>git commit</code>、<code>git push</code>。這就是最基本也最重要的節奏。</p>
+        </article>
+        <article>
+          <h3>想線上看 HTML</h3>
+          <p>把 HTML 放在 repository 裡，GitHub Pages 會照資料夾路徑發布。資料夾裡有 <code>index.html</code> 時，網址可以省略檔名。</p>
+        </article>
+        <article>
+          <h3>想大改但怕壞掉</h3>
+          <p>先開分支，例如 <code>git switch -c phase9-test</code>。確認穩定後，再合回 <code>main</code>。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>你需要記住的心法</h2>
+      <ul class="principles">
+        <li>GitHub 不是只拿來放檔案，它是用來保存每個穩定版本。</li>
+        <li>不要把 Vivado 大量自動產生物都放進 Git，保留能重建專案的原始碼、設定與說明。</li>
+        <li>HTML 網站不是額外魔法，它只是 GitHub Pages 把 repository 裡的 HTML 檔案發布出去。</li>
+        <li>每次 commit 訊息都要寫得像交接筆記，未來的你會感謝現在的你。</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>
