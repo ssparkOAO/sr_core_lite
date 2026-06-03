@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase9.2 Vivado RAM GUI Notes</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關連結：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase9_2_reference_like_ram_architecture.html">Phase9.2</a>
+      <a href="phase8_3_vivado_bram_gui.html">Phase8.3 GUI</a>
+    </nav>
+
+    <header>
+      <h1>Phase9.2 Vivado RAM GUI Notes</h1>
+      <p class="small">文件位置：<code>model_lite/sr_core/html/phase9_2_vivado_ram_gui.html</code></p>
+      <p class="small">Vivado 專案：<code>model_lite/sr_core/vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.xpr</code></p>
+      <p>
+        本頁記錄如何在 Vivado GUI 中重建 Phase9.2 的 RAM IP。
+        Tcl 版本位於 <code>vivado/sr_core_streaming_pynqz2/tcl/create_sr_core_streaming_pynqz2.tcl</code>。
+      </p>
+    </header>
+
+    <section>
+      <h2>步驟1：建立新 Vivado Project</h2>
+      <table>
+        <thead><tr><th>GUI 選項</th><th>選擇值</th><th>原因</th><th>對應 Tcl</th></tr></thead>
+        <tbody>
+          <tr><td>Project Name</td><td><code>sr_core_streaming_pynqz2</code></td><td>Phase9 使用新的 streaming architecture project</td><td><code>create_project sr_core_streaming_pynqz2 ...</code></td></tr>
+          <tr><td>Part</td><td><code>xc7z020clg400-1</code></td><td>PYNQ-Z2 使用的 Zynq-7020 part</td><td><code>-part xc7z020clg400-1</code></td></tr>
+          <tr><td>Board Part</td><td><code>tul.com.tw:pynq-z2:part0:1.0</code></td><td>沿用既有 Phase8 project board setting</td><td><code>set_property board_part ...</code></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>步驟2：IP Catalog</h2>
+      <pre>IP Catalog
+-> Block Memory Generator
+-> Customize IP</pre>
+      <p>
+        Phase9.2 新增兩個 RAM IP prototype：
+        <code>conv3_feature_ram</code> 和 <code>output_image_ram</code>。
+      </p>
+    </section>
+
+    <section>
+      <h2>步驟3：conv3_feature_ram</h2>
+      <table>
+        <thead><tr><th>GUI Option</th><th>Selected Value</th><th>Why</th><th>Equivalent Tcl</th></tr></thead>
+        <tbody>
+          <tr><td>Component Name</td><td><code>conv3_feature_ram</code></td><td>存 Conv3 output tensor，不再叫 feature_mem1</td><td><code>-module_name conv3_feature_ram</code></td></tr>
+          <tr><td>Memory Type</td><td>Simple Dual Port RAM</td><td>Port A 寫 Conv3 output，Port B 讀給 PixelShuffle</td><td><code>CONFIG.Memory_Type {Simple_Dual_Port_RAM}</code></td></tr>
+          <tr><td>Write Width A</td><td>32</td><td>一個 LR pixel 存 4 個 int8 channel：{c3,c2,c1,c0}</td><td><code>CONFIG.Write_Width_A {32}</code></td></tr>
+          <tr><td>Read Width A</td><td>32</td><td>一次讀回同一 pixel 的 4 channels</td><td><code>CONFIG.Read_Width_A {32}</code></td></tr>
+          <tr><td>Write Depth A</td><td>64</td><td>目前 LR tensor 是 8x8，共 64 pixels</td><td><code>CONFIG.Write_Depth_A {64}</code></td></tr>
+          <tr><td>Enable A/B</td><td>Use EN Pin</td><td>讓 controller 明確控制 RAM access</td><td><code>CONFIG.Enable_A/B {Use_EN*_Pin}</code></td></tr>
+          <tr><td>Output Register</td><td>Disabled</td><td>先保持和 behavioral RAM 一拍讀取模型接近</td><td><code>Register_Port*_Output... {false}</code></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>步驟4：output_image_ram</h2>
+      <table>
+        <thead><tr><th>GUI Option</th><th>Selected Value</th><th>Why</th><th>Equivalent Tcl</th></tr></thead>
+        <tbody>
+          <tr><td>Component Name</td><td><code>output_image_ram</code></td><td>存 final uint8 image output，不再叫 feature_mem2</td><td><code>-module_name output_image_ram</code></td></tr>
+          <tr><td>Memory Type</td><td>True Dual Port RAM</td><td>PixelShuffle 同一 cycle 可能寫 even row 和 odd row</td><td><code>CONFIG.Memory_Type {True_Dual_Port_RAM}</code></td></tr>
+          <tr><td>Write Width A/B</td><td>16</td><td>一個 word 存兩個水平相鄰 uint8 pixels</td><td><code>CONFIG.Write_Width_A/B {16}</code></td></tr>
+          <tr><td>Read Width A/B</td><td>16</td><td>日後讀出 image 時同樣以 packed word 讀</td><td><code>CONFIG.Read_Width_A/B {16}</code></td></tr>
+          <tr><td>Write Depth A</td><td>128</td><td>16x16 output image，每 word 2 pixels，所以 256/2 = 128</td><td><code>CONFIG.Write_Depth_A {128}</code></td></tr>
+          <tr><td>Enable A/B</td><td>Use EN Pin</td><td>清楚表示 write transaction 有效時間</td><td><code>CONFIG.Enable_A/B {Use_EN*_Pin}</code></td></tr>
+          <tr><td>Output Register</td><td>Disabled</td><td>先降低額外 latency，方便和 behavioral model 對齊</td><td><code>Register_Port*_Output... {false}</code></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>步驟5：Tcl 對照</h2>
+      <pre>create_ip -name blk_mem_gen -vendor xilinx.com -library ip -version 8.4 -module_name conv3_feature_ram
+set_property -dict [list CONFIG.Memory_Type {Simple_Dual_Port_RAM} ...] [get_ips conv3_feature_ram]
+
+create_ip -name blk_mem_gen -vendor xilinx.com -library ip -version 8.4 -module_name output_image_ram
+set_property -dict [list CONFIG.Memory_Type {True_Dual_Port_RAM} ...] [get_ips output_image_ram]</pre>
+    </section>
+
+    <section>
+      <h2>注意事項</h2>
+      <div class="decision">
+        <p>
+          Phase9.2 的 RTL wrapper 先 expose raw RAM ports，testbench 使用 behavioral RAM model。
+          Vivado RAM IP 已在新 project 中建立，下一步可以把 behavioral RAM model 換成 Vivado BMG simulation wrapper，
+          或進一步建立 block design 讓 CNN core 和 RAM IP 同層接線。
+        </p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

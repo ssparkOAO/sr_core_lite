@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase9.4 BMG IP-Backed Verification</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>快速連結：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase9_3_ref_hierarchy.html">Phase9.3</a>
+      <a href="phase9_project_split_guide.html">Phase9 操作教學</a>
+    </nav>
+
+    <header>
+      <h1>Phase9.4 BMG IP-Backed Verification</h1>
+      <p class="small">文件位置：<code>model_lite/sr_core/html/phase9_4_bmg_ip_backed_verification.html</code></p>
+      <p class="small">Vivado Project：<code>model_lite/sr_core/vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.xpr</code></p>
+      <p class="small">IP-backed TB：<code>model_lite/sr_core/RTL_sys/phase9_4_ip_verify/sim/tb_sr_nn_top_ip.v</code></p>
+      <div class="decision">
+        <p>
+          Phase9.4 的目標是確認 Phase9.3 的 <code>sr_nn_top</code> 不只可以用
+          behavioral RAM model 跑通，也可以接 Vivado Block Memory Generator 產生的
+          ROM/RAM IP simulation wrapper，並完成 end-to-end golden verification。
+        </p>
+      </div>
+    </header>
+
+    <section>
+      <h2>1. Phase9.3 和 Phase9.4 的差異</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>項目</th>
+            <th>Phase9.3</th>
+            <th>Phase9.4</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Memory source</td>
+            <td><code>ram_ip_bhv.v</code> 手寫 behavioral model</td>
+            <td>Vivado project 內 BMG IP wrapper</td>
+          </tr>
+          <tr>
+            <td>測試目的</td>
+            <td>確認 hierarchy 與 controller 行為正確</td>
+            <td>確認真正 IP-backed simulation 仍然 bit-exact</td>
+          </tr>
+          <tr>
+            <td>TB 位置</td>
+            <td><code>RTL_sys/phase9_3_ref_hier/sim/tb_sr_nn_top.v</code></td>
+            <td><code>RTL_sys/phase9_4_ip_verify/sim/tb_sr_nn_top_ip.v</code></td>
+          </tr>
+          <tr>
+            <td>結果位置</td>
+            <td><code>RTL_sys/phase9_3_ref_hier/results/</code></td>
+            <td><code>RTL_sys/phase9_4_ip_verify/results/</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>2. 真正用到的 Vivado IP</h2>
+      <p>
+        Phase9.4 使用既有 Vivado project，不重新建立 project，也不重建 IP。
+        目前 project 內真正需要的 memory IP 是：
+      </p>
+      <ul>
+        <li><code>conv1_weight_rom</code></li>
+        <li><code>conv3_weight_rom</code></li>
+        <li><code>conv1_m0_rom</code></li>
+        <li><code>conv1_m1_rom</code></li>
+        <li><code>conv3_m0_rom</code></li>
+        <li><code>conv3_m1_rom</code></li>
+        <li><code>conv3_feature_ram</code></li>
+        <li><code>output_image_ram</code></li>
+      </ul>
+      <p>
+        Vivado compile 時會使用 project 產生的 wrapper，例如：
+      </p>
+      <pre>.../ip/conv1_weight_rom/sim/conv1_weight_rom.v
+.../ip/conv3_feature_ram/sim/conv3_feature_ram.v
+.../ip/output_image_ram/sim/output_image_ram.v</pre>
+      <p>
+        目前 project 已設定為 <code>target_language = Verilog</code>、
+        <code>simulator_language = Verilog</code>。實際 simulation log 中，
+        Vivado 使用 <code>xvlog</code> 分析上述 <code>.v</code> wrapper。
+        Project compile-order 裡沒有 <code>.vhd</code> 或 <code>.vhdl</code> source。
+      </p>
+    </section>
+
+    <section>
+      <h2>3. 為什麼需要 Debug Readback Port</h2>
+      <p>
+        Phase9.3 的手寫 RAM model 有公開的 <code>mem[]</code> array，
+        testbench 可以直接偷看記憶體內容。但 Vivado BMG IP wrapper 不是這樣使用的；
+        testbench 不應依賴 IP 內部實作細節。
+      </p>
+      <p>
+        因此 Phase9.4 在 <code>sr_nn_top</code> 加入 debug readback ports。
+        正常 CNN run 時，RAM port 由 controller 控制；等 <code>done=1</code> 後，
+        TB 才透過 debug port 讀回 RAM 內容並比對 golden。
+      </p>
+      <pre>dbg_c3_rd_en / dbg_c3_rd_addr / dbg_c3_rd_data
+dbg_out_rd_en / dbg_out_rd_addr / dbg_out_rd_data</pre>
+    </section>
+
+    <section>
+      <h2>4. 驗證流程</h2>
+      <pre>Vivado BMG ROM/RAM IP
+→ sr_nn_top
+→ preload parameter
+→ feed input_int8_for_core.mem
+→ Conv1
+→ Conv1-to-Conv3 register slice
+→ Conv3
+→ conv3_feature_ram IP
+→ PixelShuffle
+→ OutputStage packer
+→ output_image_ram IP
+→ debug readback
+→ compare golden</pre>
+      <p>
+        使用 golden：
+      </p>
+      <ul>
+        <li><code>generated/golden/input_int8_for_core.mem</code></li>
+        <li><code>generated/golden/conv3_out_int8.mem</code></li>
+        <li><code>generated/golden/output_uint8.mem</code></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>5. PASS 條件與結果</h2>
+      <pre>conv3_feature_ram mismatch count = 0
+output_image_ram mismatch count = 0
+total mismatch count = 0
+max abs diff = 0
+PASS</pre>
+      <p>
+        這代表目前 <code>sr_nn_top</code> 的 reference-like hierarchy 可以接上
+        Vivado BMG ROM/RAM IP simulation wrapper，而且結果與 golden bit-exact。
+      </p>
+    </section>
+
+    <section>
+      <h2>6. 操作指令</h2>
+      <p>
+        Phase9.4 的主要驗證入口是：
+      </p>
+      <pre>C:\Xilinx\Vivado\2023.1\bin\vivado.bat -mode batch -source model_lite/sr_core/vivado/sr_core_streaming_pynqz2/tcl/run_phase9_4_ip_sim.tcl</pre>
+      <p>
+        如果 Vivado project 來源清單變亂，可以先執行清理腳本：
+      </p>
+      <pre>C:\Xilinx\Vivado\2023.1\bin\vivado.bat -mode batch -source model_lite/sr_core/vivado/sr_core_streaming_pynqz2/tcl/clean_phase9_4_project.tcl</pre>
+      <p>
+        如果要重新確認 IP wrapper 使用 Verilog，執行：
+      </p>
+      <pre>C:\Xilinx\Vivado\2023.1\bin\vivado.bat -mode batch -source model_lite/sr_core/vivado/sr_core_streaming_pynqz2/tcl/set_ip_verilog_and_regen.tcl
+C:\Xilinx\Vivado\2023.1\bin\vivado.bat -mode batch -source model_lite/sr_core/vivado/sr_core_streaming_pynqz2/tcl/report_ip_language.tcl</pre>
+    </section>
+
+    <section>
+      <h2>7. Warning Notes</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>訊息</th>
+            <th>說明</th>
+            <th>處理方式</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>BMG is using a behavioral model for simulation</code></td>
+            <td>這是 Vivado BMG IP 自己的 simulation model 提醒，不是使用 <code>ram_ip_bhv.v</code>。</td>
+            <td>正常保留；功能驗證仍以 golden compare 為準。</td>
+          </tr>
+          <tr>
+            <td><code>No write access right to the local Tcl store</code></td>
+            <td>Vivado 環境找不到可寫入的 Tcl store。</td>
+            <td>與 RTL/IP correctness 無關；目前不影響 simulation PASS。</td>
+          </tr>
+          <tr>
+            <td><code>Unable to auto find GCC executables</code></td>
+            <td>XSim 找不到 GCC path。</td>
+            <td>本專案沒有使用 DPI/C simulation，不影響 PASS。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>8. What Did We Learn?</h2>
+      <p>
+        Phase9.3 是 hierarchy correctness，Phase9.4 是 IP-backed correctness。
+        兩者都很重要，但不能混在一起看。從現在開始，若要確認「真的用 Vivado BMG IP」，
+        請看 Phase9.4 的 Vivado project、IP wrapper、與 <code>phase9_4_ip_verify/results/</code>。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

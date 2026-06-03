@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase9.3 Reference-Like CNN Hierarchy</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>快速連結：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase9_2_reference_like_ram_architecture.html">Phase9.2</a>
+      <a href="phase9_4_bmg_ip_backed_verification.html">Phase9.4</a>
+      <a href="phase9_project_split_guide.html">Phase9 操作教學</a>
+    </nav>
+
+    <header>
+      <h1>Phase9.3 Reference-Like CNN Hierarchy</h1>
+      <p class="small">文件位置：<code>model_lite/sr_core/html/phase9_3_ref_hierarchy.html</code></p>
+      <p class="small">工作區：<code>model_lite/sr_core/RTL_sys/phase9_3_ref_hier/</code></p>
+      <div class="decision">
+        <p>
+          Phase9.3 的目標是整理 CNN hierarchy，讓 Vivado schematic 看起來更接近
+          <code>ref/cnn_classfication</code>：controller、Conv1、Conv3、ROM/RAM block
+          在同一層可以直接看見。這一階段使用 <code>ram_ip_bhv.v</code> 行為模型驗證，
+          還不是正式的 Vivado BMG IP-backed simulation。
+        </p>
+      </div>
+    </header>
+
+    <section>
+      <h2>1. 為什麼做 Phase9.3</h2>
+      <p>
+        之前的 wrapper 功能正確，但層級太像「把所有東西包起來的驗證外殼」。
+        你希望最後在 Vivado schematic 裡看到的結構，是 CNN block、controller、
+        ROM/RAM IP 同層排列，像 reference project 那樣容易追線、容易定位 module。
+      </p>
+      <p>
+        因此 Phase9.3 不改 verified RTL 本體，而是重組 system-level top：
+        Conv1 和 Conv3 不合併，兩者仍是獨立 CNN block，中間用一個小的 register slice
+        做 valid/data 對齊，並且移除 <code>feature_mem0</code>。
+      </p>
+    </section>
+
+    <section>
+      <h2>2. Target Hierarchy</h2>
+      <pre>sr_nn_top
+├─ sr_ctrl
+├─ sr_pctrl
+├─ conv1_weight_rom
+├─ conv3_weight_rom
+├─ conv1_m0_rom
+├─ conv1_m1_rom
+├─ conv3_m0_rom
+├─ conv3_m1_rom
+├─ conv1_block
+├─ sr_c1c3_slice
+├─ conv3_block
+├─ conv3_feature_ram
+├─ pixel_shuffle_core
+├─ sr_out_pack
+└─ output_image_ram</pre>
+      <p>
+        這個 hierarchy 的重點不是最高效能，而是讓 PL 端 CNN datapath 和 memory block
+        的關係清楚可見。這會讓後續換成 Vivado IP、看 schematic、做 synthesis check
+        都比較容易。
+      </p>
+    </section>
+
+    <section>
+      <h2>3. 資料夾整理</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>資料夾</th>
+            <th>用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>rtl/</code></td>
+            <td>Phase9.3 reference-like hierarchy RTL：<code>sr_nn_top</code>、<code>sr_ctrl</code>、<code>sr_pctrl</code>、<code>sr_c1c3_slice</code>、<code>sr_out_pack</code>。</td>
+          </tr>
+          <tr>
+            <td><code>sim/</code></td>
+            <td>Behavioral-only simulation：<code>tb_sr_nn_top.v</code> 與 <code>ram_ip_bhv.v</code>。這裡不是 Vivado BMG IP。</td>
+          </tr>
+          <tr>
+            <td><code>results/</code></td>
+            <td>Phase9.3 behavioral PASS 結果與 dump 檔。</td>
+          </tr>
+          <tr>
+            <td><code>work/</code></td>
+            <td>xsim 產生的 log、snapshot、<code>.wdb</code> 波形資料。這些不是 RTL source。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>4. Phase9.3 驗證方式</h2>
+      <p>
+        Phase9.3 使用手寫的 <code>ram_ip_bhv.v</code> 模擬 ROM/RAM module name。
+        它的用途是先確認新 hierarchy、controller、Conv1→Conv3 streaming、
+        PixelShuffle write transaction、output packing 這些邏輯正確。
+      </p>
+      <pre>TB input source
+→ sr_nn_top
+→ behavioral ROM/RAM model
+→ Conv1
+→ Conv1-to-Conv3 register slice
+→ Conv3
+→ behavioral conv3_feature_ram
+→ PixelShuffle
+→ sr_out_pack
+→ behavioral output_image_ram
+→ compare golden</pre>
+      <p>
+        PASS 條件是 <code>conv3_feature_ram</code> 對上 <code>conv3_out_int8.mem</code>，
+        且 <code>output_image_ram</code> 對上 <code>output_uint8.mem</code>，
+        mismatch count 與 max abs diff 都為 0。
+      </p>
+    </section>
+
+    <section>
+      <h2>5. Phase9.3 和 Phase9.4 的分界</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Phase</th>
+            <th>Memory</th>
+            <th>目的</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Phase9.3</td>
+            <td><code>ram_ip_bhv.v</code></td>
+            <td>先確認新 hierarchy 功能正確。</td>
+          </tr>
+          <tr>
+            <td>Phase9.4</td>
+            <td>Vivado BMG IP wrapper</td>
+            <td>確認同一個 <code>sr_nn_top</code> 可以接真正 Vivado ROM/RAM IP simulation wrapper。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>6. What Did We Learn?</h2>
+      <p>
+        CNN block 不一定要包進一個巨大 wrapper 才能工作。更適合 deployment 前期的做法，
+        是讓 controller、CNN block、ROM/RAM IP 以清楚層級並列，保留 verified module
+        的可追蹤性，也讓 Vivado schematic 更接近真實 PL architecture。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

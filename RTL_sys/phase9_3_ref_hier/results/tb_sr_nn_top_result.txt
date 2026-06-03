@@ -1,0 +1,11 @@
+Phase9.3 sr_nn_top reference-like hierarchy verification result
+==============================================================
+Purpose : controller + ROM IP + Conv1 + slice + Conv3 + RAM ports at top level
+Golden  : conv3_out_int8.mem and output_uint8.mem
+
+preload_done asserted
+conv3_feature_ram mismatch count = 0
+output_image_ram mismatch count = 0
+total mismatch count = 0
+max abs diff = 0
+PASS

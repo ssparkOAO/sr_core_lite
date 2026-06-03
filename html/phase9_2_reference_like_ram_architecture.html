@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase9.2 Reference-Like RAM Architecture</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關連結：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase9_1_conv1_conv3_streaming_analysis.html">Phase9.1</a>
+      <a href="phase9_2_vivado_ram_gui.html">Phase9.2 Vivado GUI</a>
+    </nav>
+
+    <header>
+      <h1>Phase9.2 Reference-Like RAM/IP Architecture</h1>
+      <p class="small">文件位置：<code>model_lite/sr_core/html/phase9_2_reference_like_ram_architecture.html</code></p>
+      <p class="small">RTL 位置：<code>model_lite/sr_core/RTL_sys/phase9_streaming_architecture/</code></p>
+      <p class="small">Vivado 專案：<code>model_lite/sr_core/vivado/sr_core_streaming_pynqz2/</code></p>
+      <div class="decision">
+        <p>
+          Phase9.2 的重點是把 SR Core 從 verification-oriented stage memory bridge，
+          推進到接近 <code>ref/cnn_classfication</code> 的 PL 架構：
+          CNN datapath 和 ROM/RAM IP 在同一層，由 controller 產生 raw memory port。
+        </p>
+        <p>
+          重要狀態：目前 Phase9.2 的完整 pipeline PASS 是用 behavioral RAM model 驗證 raw RAM port 架構。
+          Vivado streaming project 和 RAM IP 已建立，但 <code>conv3_feature_ram</code> /
+          <code>output_image_ram</code> 尚未替換進 xsim 完整 pipeline 驗證。
+        </p>
+      </div>
+    </header>
+
+    <section>
+      <h2>1. Phase 目標</h2>
+      <p>
+        建立新的 RTL_sys top：<code>sr_core_top_stream_ram_wrapper.v</code>。
+        它不再例化舊的 <code>sr_core_top</code>，而是直接例化已驗證的 Conv1、Conv3、
+        PixelShuffle、OutputStage blocks，並把中間 RAM 改成對外 raw RAM port。
+      </p>
+      <pre>TB input source
+-> Conv1 Block
+-> Conv1 to Conv3 register slice
+-> Conv3 Block
+-> conv3_feature_ram raw port
+-> PixelShuffle
+-> OutputStage
+-> output_image_ram raw port</pre>
+    </section>
+
+    <section>
+      <h2>2. 現有問題</h2>
+      <p>
+        Phase7 / Phase8 的 <code>sr_core_top</code> 把 <code>feature_mem0</code>、
+        <code>feature_mem1</code>、<code>feature_mem2</code> 都寫成內部 <code>reg[]</code>。
+        這很適合逐層 debug，但不像真正 PL 架構，因為 Vivado BRAM/RAM IP 應該在同一層被明確接線。
+      </p>
+      <table>
+        <thead><tr><th>Memory</th><th>舊用途</th><th>Phase9.2 決策</th></tr></thead>
+        <tbody>
+          <tr><td><code>feature_mem0</code></td><td>Conv1 output full feature map</td><td>移除，不做 FIFO、不做 RAM</td></tr>
+          <tr><td><code>feature_mem1</code></td><td>Conv3 output / PixelShuffle input</td><td>改成 <code>conv3_feature_ram</code> raw port</td></tr>
+          <tr><td><code>feature_mem2</code></td><td>PixelShuffle int8 output</td><td>改成 final <code>output_image_ram</code> raw port</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>3. 為什麼 feature_mem0 不做 RAM</h2>
+      <p>
+        Conv3 是 1x1 convolution。對每個 pixel，它只需要同一個位置的 8-channel Conv1 output。
+        因此 Conv1 output 可以直接透過一拍 register slice 送入 Conv3，不需要保存完整 feature map。
+      </p>
+      <pre>Conv1 q0~q7 + out_valid + x/y
+-> register slice
+-> Conv3 in_c0~in_c7</pre>
+      <p>
+        這個判斷跟輸入尺寸無關。即使未來變成 128x128，Conv3 仍然只讀同一 pixel 的 8 channels。
+        圖片越大，越不應該保留整張 <code>feature_mem0</code>。
+      </p>
+    </section>
+
+    <section>
+      <h2>4. 為什麼 feature_mem1 要變 RAM IP</h2>
+      <p>
+        PixelShuffle 目前是 write-transaction core，會按照 LR pixel 順序產生 HR address。
+        Conv3 output 是 PixelShuffle 的 input tensor，所以需要一個明確的 PL-side buffer：
+        <code>conv3_feature_ram</code>。
+      </p>
+      <p>
+        本階段採用 32-bit word，而不是 8-bit word：
+      </p>
+      <pre>conv3_feature_ram word = {c3, c2, c1, c0}
+width = 32
+depth = 8 * 8 = 64</pre>
+      <p>
+        這樣每個 Conv3 pixel 只需要一次 RAM write，符合 Conv3 block 一次產生 4 channel 的 parallel datapath。
+      </p>
+    </section>
+
+    <section>
+      <h2>5. 為什麼 feature_mem2 改成 output image RAM</h2>
+      <p>
+        <code>sr_output_stage</code> 是 combinational int8 to uint8 conversion。
+        因此 PixelShuffle 產生 HR address 後，可以直接把 int8 sub-pixels 轉成 uint8，寫入 final output RAM。
+        這比先存一份 int8 PixelShuffle buffer 再轉 uint8 更接近最後 PL output buffer。
+      </p>
+      <pre>PixelShuffle wr_data_a = {c1, c0}
+OutputStage converts c0/c1 to uint8
+output_image_ram word = {right_uint8, left_uint8}
+width = 16
+depth = 16 * 16 / 2 = 128</pre>
+      <p>
+        因為 PixelShuffle 同一個 LR pixel 會同時寫 even row 和 odd row，<code>output_image_ram</code>
+        使用 true dual-port RAM 比 simple dual-port RAM 更合適。
+      </p>
+    </section>
+
+    <section>
+      <h2>5.1 PixelShuffle 到 OutputStage 的新接法</h2>
+      <p>
+        Phase9.2 這裡和 Phase7 的 <code>sr_core_top</code> 不同。Phase7 是先把 PixelShuffle 的 signed int8
+        結果存進 <code>feature_mem2</code>，再逐 pixel 送進 <code>sr_output_stage</code> 轉成 uint8。
+        Phase9.2 則把 <code>feature_mem2</code> 移除，讓 PixelShuffle write transaction 直接接
+        <code>sr_output_stage</code>，再寫入 final <code>output_image_ram</code>。
+      </p>
+      <pre>Phase7:
+PixelShuffle
+-> feature_mem2, signed int8
+-> sr_output_stage
+-> output_mem, uint8
+
+Phase9.2:
+PixelShuffle
+-> sr_output_stage, combinational int8 to uint8
+-> output_image_ram, uint8</pre>
+      <p>
+        RTL 中這段看起來像新增了四個 output stage instance：
+      </p>
+      <pre>sr_output_stage out_a_l (.in_pixel(ps_wr_data_a[7:0]),  .out_pixel_uint8(out_a_left));
+sr_output_stage out_a_r (.in_pixel(ps_wr_data_a[15:8]), .out_pixel_uint8(out_a_right));
+sr_output_stage out_b_l (.in_pixel(ps_wr_data_b[7:0]),  .out_pixel_uint8(out_b_left));
+sr_output_stage out_b_r (.in_pixel(ps_wr_data_b[15:8]), .out_pixel_uint8(out_b_right));</pre>
+      <p>
+        原因是 <code>pixel_shuffle_core</code> 一次輸出兩個 packed word：
+      </p>
+      <table>
+        <thead><tr><th>Signal</th><th>bit range</th><th>PixelShuffle channel</th><th>HR 位置</th><th>OutputStage</th></tr></thead>
+        <tbody>
+          <tr><td><code>ps_wr_data_a</code></td><td><code>[7:0]</code></td><td><code>c0</code></td><td>even row, left pixel</td><td><code>out_a_l</code></td></tr>
+          <tr><td><code>ps_wr_data_a</code></td><td><code>[15:8]</code></td><td><code>c1</code></td><td>even row, right pixel</td><td><code>out_a_r</code></td></tr>
+          <tr><td><code>ps_wr_data_b</code></td><td><code>[7:0]</code></td><td><code>c2</code></td><td>odd row, left pixel</td><td><code>out_b_l</code></td></tr>
+          <tr><td><code>ps_wr_data_b</code></td><td><code>[15:8]</code></td><td><code>c3</code></td><td>odd row, right pixel</td><td><code>out_b_r</code></td></tr>
+        </tbody>
+      </table>
+      <p>
+        <code>sr_output_stage</code> 是 combinational block，只做 output clip 與 <code>signed int8 + 128</code>
+        的 uint8 recovery。因此這裡不是新增 CNN layer，也不是額外 pipeline；它只是把原本
+        <code>feature_mem2 -> output_mem</code> 的轉換移到 output RAM write path 前面。
+      </p>
+      <div class="decision">
+        <p>
+          這樣做的好處是 final PL buffer 直接存 <code>output_uint8</code> image domain。
+          日後若接 DMA 或 PS 讀回，就不需要再讀一份 int8 PixelShuffle buffer 後另外轉格式。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>6. 參考 ref/cnn_classfication 的設計觀念</h2>
+      <p>
+        參考專案的 <code>blk_ram_temp</code> 不是藏在 convolution module 裡，而是由 controller
+        對外輸出 raw RAM port：
+      </p>
+      <pre>ram_addr
+ram_data
+ram_en
+ram_we</pre>
+      <p>
+        Phase9.2 採用同樣觀念：CNN datapath 負責計算，RAM IP 負責儲存，中間由 controller/top
+        產生 port 訊號。這比在 top 內寫 <code>reg feature_mem[]</code> 更接近未來 Vivado block design。
+      </p>
+    </section>
+
+    <section>
+      <h2>7. RTL 修改內容</h2>
+      <table>
+        <thead><tr><th>檔案</th><th>用途</th></tr></thead>
+        <tbody>
+          <tr><td><code>sr_core_top_stream_ram_wrapper.v</code></td><td>Phase9.2 main wrapper，直接接 verified blocks 與 raw RAM ports</td></tr>
+          <tr><td><code>phase9_behavioral_ram_models.v</code></td><td>模擬 Vivado RAM IP 的 behavioral RAM model</td></tr>
+          <tr><td><code>tb_sr_core_top_stream_ram_wrapper.v</code></td><td>self-checking testbench</td></tr>
+          <tr><td><code>create_sr_core_streaming_pynqz2.tcl</code></td><td>建立新 Vivado streaming project 與 ROM/RAM IP</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>8. 驗證方式</h2>
+      <p>
+        Phase9.2 分成兩層驗證。第一層先確認 RTL controller 產生的 raw RAM port 與資料流正確；
+        第二層建立 Vivado RAM IP prototype，保留下一步替換 behavioral RAM model 的路徑。
+      </p>
+      <table>
+        <thead><tr><th>層級</th><th>使用內容</th><th>目的</th><th>目前狀態</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Phase9.2-A</td>
+            <td><code>phase9_behavioral_ram_models.v</code></td>
+            <td>驗證 CNN datapath、Conv1 to Conv3 streaming、RAM address/data/en/we、golden compare</td>
+            <td><strong>PASS</strong></td>
+          </tr>
+          <tr>
+            <td>Phase9.2-B</td>
+            <td>Vivado project + BMG RAM IP</td>
+            <td>建立 <code>conv3_feature_ram</code> 與 <code>output_image_ram</code> 的 IP prototype</td>
+            <td><strong>IP Created</strong></td>
+          </tr>
+          <tr>
+            <td>Phase9.3</td>
+            <td>Vivado BMG RAM simulation wrappers</td>
+            <td>把 behavioral RAM model 換成 Vivado IP simulation wrapper，再跑完整 pipeline</td>
+            <td>Next Step</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="warn">
+        <p>
+          所以目前不能說「feature/output RAM IP 已經跑完整 pipeline PASS」。
+          精準說法是：「raw RAM port 架構已用 behavioral RAM model PASS；Vivado RAM IP 已在新 project 建立」。
+        </p>
+      </div>
+      <table>
+        <thead><tr><th>比對目標</th><th>Golden file</th><th>RTL dump</th></tr></thead>
+        <tbody>
+          <tr><td>Conv3 output RAM</td><td><code>generated/golden/conv3_out_int8.mem</code></td><td><code>conv3_feature_ram_dump.txt</code></td></tr>
+          <tr><td>Final uint8 output RAM</td><td><code>generated/golden/output_uint8.mem</code></td><td><code>output_image_ram_dump.txt</code></td></tr>
+        </tbody>
+      </table>
+      <pre>Phase9.2-A behavioral verification:
+
+Input mem
+-> preload parameter ROMs
+-> Conv1
+-> Conv3 streaming
+-> conv3_feature_ram
+-> PixelShuffle
+-> OutputStage
+-> output_image_ram
+-> compare golden</pre>
+    </section>
+
+    <section>
+      <h2>9. 驗證結果</h2>
+      <p>
+        以下結果來自 Phase9.2-A：behavioral RAM model 模擬 RAM IP port。
+        參數 ROM 也使用 Phase8.4b 的 local behavioral ROM model，因此這次結果主要證明的是：
+        新 controller / raw RAM port / streaming datapath 的 mapping 正確。
+      </p>
+      <pre>preload_done asserted
+conv3_feature_ram mismatch count = 0
+output_image_ram mismatch count = 0
+total mismatch count = 0
+max abs diff = 0
+PASS</pre>
+      <p class="small">結果檔：<code>RTL_sys/phase9_streaming_architecture/tb_sr_core_top_stream_ram_wrapper_result.txt</code></p>
+    </section>
+
+    <section>
+      <h2>10. Vivado Project</h2>
+      <p>
+        Phase9 使用新的 Vivado project，不沿用 Phase8 的 <code>sr_core_bram_pynqz2</code> 作為主專案。
+      </p>
+      <pre>model_lite/sr_core/vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.xpr</pre>
+      <p>已建立的 RAM IP prototype：</p>
+      <table>
+        <thead><tr><th>IP</th><th>Type</th><th>Width</th><th>Depth</th><th>用途</th></tr></thead>
+        <tbody>
+          <tr><td><code>conv3_feature_ram</code></td><td>Simple Dual Port RAM</td><td>32</td><td>64</td><td>Conv3 output tensor</td></tr>
+          <tr><td><code>output_image_ram</code></td><td>True Dual Port RAM</td><td>16</td><td>128</td><td>Final uint8 image output</td></tr>
+        </tbody>
+      </table>
+      <p>
+        這些 IP 已由 Tcl 建立在新 project 中，但本階段 xsim 完整 pipeline 尚未改用這些
+        Vivado-generated simulation wrappers。這是下一階段 Phase9.3 的工作。
+      </p>
+    </section>
+
+    <section>
+      <h2>11. 遇到的問題</h2>
+      <table>
+        <thead><tr><th>問題</th><th>處理方式</th></tr></thead>
+        <tbody>
+          <tr><td>一開始容易把 feature_mem0 也想成 RAM</td><td>重新用 Conv3 1x1 dependency 分析，確認它可 streaming 移除</td></tr>
+          <tr><td>Conv3 output 若用 8-bit RAM 會導致 4 次寫入</td><td>改用 32-bit word 一次存 4 channel</td></tr>
+          <tr><td>PixelShuffle 同時寫 even/odd row</td><td>output RAM 採用 true dual-port RAM prototype</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>12. What did we learn?</h2>
+      <p>
+        Streaming 不代表所有中間資料都消失。真正的判斷標準是下一個 stage 的資料相依性。
+        Conv1 到 Conv3 可以 streaming，因為 Conv3 是 1x1；但 Conv3 到 PixelShuffle 需要明確的 feature/output RAM port，
+        因為這部分開始牽涉 HR address generation 與 output image buffer。
+      </p>
+      <div class="decision">
+        <p>
+          Phase9.2 完成後，SR Core 已經從「內部 reg array stage memory」推進到
+          「CNN datapath + raw RAM port」的可驗證架構；同時也建立了 Vivado RAM IP prototype。
+          但 Vivado RAM IP wrapper 級完整驗證留到 Phase9.3。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>13. 下一步</h2>
+      <p>
+        下一步應該把 behavioral RAM model 換成 Vivado BMG RAM simulation wrapper，
+        確認 <code>sr_core_top_stream_ram_wrapper</code> 真的能和 <code>conv3_feature_ram</code> /
+        <code>output_image_ram</code> IP 同層接線並保持 bit-exact PASS。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

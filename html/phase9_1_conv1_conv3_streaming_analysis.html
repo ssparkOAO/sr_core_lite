@@ -1,0 +1,373 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase9.1 Conv1 to Conv3 Streaming Analysis</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="rtl/index.html">RTL Modules</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase8_index.html">Phase8</a>
+      <a href="tool_convert_generated_to_vivado_hex.html">Vivado Hex Tool</a>
+    </nav>
+
+    <header>
+      <h1>Phase9.1 Conv1 → Conv3 Streaming Analysis</h1>
+      <p class="small">文件位置：<code>model_lite/sr_core/html/phase9_1_conv1_conv3_streaming_analysis.html</code></p>
+      <p class="small">參考架構：<code>model_lite/sr_core/RTL_sys/phase8_4_rom_preload_wrapper/sr_core_top_rom_preload_wrapper.v</code></p>
+      <p class="small">參考 verified top：<code>model_lite/sr_core/RTL/sr_core_top/sr_core_top.v</code></p>
+      <p>
+        Phase9 開始 Streaming Architecture Refactor。Phase9.1 只分析如何消除
+        <code>feature_mem0</code>，不寫 RTL、不修改 <code>RTL/</code> 已驗證模組。
+      </p>
+      <div class="decision">
+        <p>
+          結論：<code>feature_mem0</code> 可以移除。原因是 Conv3 是 1x1 convolution，
+          對每個 pixel 只需要同一個 pixel 的 8-channel Conv1 output，不需要完整 feature map。
+        </p>
+      </div>
+    </header>
+
+    <section>
+      <h2>1. 現有架構</h2>
+      <p>
+        目前 Phase8.4b 的外層 wrapper 先完成 ROM preload，將 weight / M0 / M1 載入 parameter register bank，
+        再啟動 verified <code>sr_core_top</code>。而 <code>sr_core_top</code> 內部仍是 verification-oriented
+        stage memory bridge 架構。
+      </p>
+      <pre>Input
+-> Conv1 block
+-> feature_mem0
+-> Conv3 block
+-> feature_mem1
+-> PixelShuffle
+-> feature_mem2
+-> OutputStage
+-> output_uint8</pre>
+      <p>
+        這種方式對 Phase7 / Phase8 很有價值，因為每個 stage 都可以 dump 並與 golden 對齊。
+        但它不是最後 accelerator architecture，因為每一層都要等前一層整張 feature map 完成。
+      </p>
+    </section>
+
+    <section>
+      <h2>2. feature_mem0 作用</h2>
+      <p>
+        在目前 <code>sr_core_top.v</code> 中，<code>feature_mem0</code> 是 Conv1 和 Conv3 之間的中間 feature map。
+      </p>
+      <pre>reg signed [7:0] feature_mem0 [0:511];</pre>
+      <p>
+        它保存：
+      </p>
+      <table>
+        <thead>
+          <tr><th>項目</th><th>內容</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Shape</td><td><code>8 x 8 x 8</code></td></tr>
+          <tr><td>元素數</td><td><code>64 pixels * 8 channels = 512 bytes</code></td></tr>
+          <tr><td>寫入來源</td><td><code>conv1_q0 ~ conv1_q7</code></td></tr>
+          <tr><td>寫入時機</td><td><code>conv1_out_valid == 1</code></td></tr>
+          <tr><td>地址</td><td><code>(conv1_out_y * 8 + conv1_out_x) * 8 + channel</code></td></tr>
+          <tr><td>讀出用途</td><td>Conv3 在 <code>ST_CONV3</code> 逐 pixel 讀 8 channels</td></tr>
+        </tbody>
+      </table>
+      <p>
+        現有控制流程是先跑完整張 Conv1，再切到 Conv3：
+      </p>
+      <pre>ST_CONV1:
+  if conv1_out_valid:
+    write feature_mem0
+    if last pixel:
+      state -> ST_CONV3
+
+ST_CONV3:
+  read feature_mem0[pixel*8 + 0..7]
+  run Conv3
+  write feature_mem1</pre>
+    </section>
+
+    <section>
+      <h2>3. 為什麼可移除</h2>
+      <p>
+        Conv3 是 1x1 convolution。它的數學是：
+      </p>
+      <pre>acc[co] =
+  sum ci=0..7 input[ci] * weight[co][ci]</pre>
+      <p>
+        對於某一個 pixel，Conv3 只需要這個 pixel 的 8 個 Conv1 output channel。
+        它不需要上、下、左、右 pixel，也不需要完整 8x8 feature map。
+      </p>
+      <table>
+        <thead>
+          <tr><th>Layer</th><th>是否需要鄰近 pixel</th><th>原因</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Conv1 3x3</td><td>需要</td><td>kernel 3x3，需要 window / line buffer / padding</td></tr>
+          <tr><td>Conv3 1x1</td><td>不需要</td><td>只混合同一 pixel 的 8 channels</td></tr>
+        </tbody>
+      </table>
+      <p>
+        因此 <code>feature_mem0</code> 目前保存的 512 bytes 中，Conv3 真正同一時間需要的只有
+        <code>conv1_q0 ~ conv1_q7</code> 這一組 8 bytes。
+      </p>
+    </section>
+
+    <section>
+      <h2>4. Streaming 資料流</h2>
+      <p>
+        Phase9.1 建議的方向是把 Conv1 output valid 直接接到 Conv3 input valid。
+        資料不再先進 <code>feature_mem0</code>，而是形成 pixel-level streaming。
+      </p>
+      <pre>Input stream
+-> Conv1 block
+   out_valid, out_x, out_y, q0~q7
+-> optional register slice
+-> Conv3 block
+   q0~q3
+-> feature_mem1</pre>
+      <p>
+        注意：Phase9.1 只消除 <code>feature_mem0</code>。
+        <code>feature_mem1</code> 和 <code>feature_mem2</code> 可以先保留，讓後續 verification 仍然容易。
+      </p>
+      <div class="decision">
+        <p>
+          第一版 streaming refactor 不需要一次把 Conv3、PixelShuffle、OutputStage 全部串成 streaming。
+          正確策略是先消除一個 stage memory，驗證 PASS，再進下一段。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>5. 控制訊號分析</h2>
+      <p>
+        Conv1 → Conv3 之間至少需要以下訊號：
+      </p>
+      <table>
+        <thead>
+          <tr><th>Signal</th><th>用途</th><th>備註</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><code>conv1_out_valid</code></td><td>表示 <code>q0~q7</code> 是有效 pixel</td><td>可成為 Conv3 input valid</td></tr>
+          <tr><td><code>conv1_out_x</code></td><td>Conv1 output pixel x 座標</td><td>用於 debug 或 feature_mem1 address</td></tr>
+          <tr><td><code>conv1_out_y</code></td><td>Conv1 output pixel y 座標</td><td>用於 debug 或 feature_mem1 address</td></tr>
+          <tr><td><code>conv1_q0~q7</code></td><td>Conv3 的 8-channel input</td><td>同一 pixel 的 channel vector</td></tr>
+          <tr><td><code>conv3_out_valid</code></td><td>Conv3 output q0~q3 有效</td><td>如果 Conv3 是 combinational，可由 valid register 對齊</td></tr>
+          <tr><td><code>conv3_out_index</code></td><td>寫 feature_mem1 的 pixel index</td><td>可由 x/y 轉成 <code>y*8+x</code></td></tr>
+        </tbody>
+      </table>
+      <p>
+        目前 <code>sr_conv1x1_cin8_cout4_block</code> 是 combinational MAC + requant block，沒有自己的
+        <code>valid</code> port。因此 Phase9.2 若實作 RTL_sys wrapper，需要在 wrapper 內建立
+        <code>conv3_in_valid</code> / <code>conv3_out_valid</code> 的對齊規則。
+      </p>
+    </section>
+
+    <section>
+      <h2>6. Valid Pipeline 分析</h2>
+      <p>
+        如果 Conv3 block 保持 combinational，最簡單的 valid 對齊方式如下：
+      </p>
+      <pre>cycle N:
+  conv1_out_valid = 1
+  conv1_q0~q7     = valid
+  conv3_q0~q3     = combinational result
+
+cycle N+1:
+  conv3_out_valid = registered conv1_out_valid
+  write feature_mem1 with registered conv3_q0~q3</pre>
+      <p>
+        這等於在 Conv1 和 Conv3 之間加入一個 register slice。好處是：
+      </p>
+      <ul>
+        <li>Conv1 output 和 Conv3 input 邊界清楚。</li>
+        <li>Conv3 output valid 可以穩定對齊 feature_mem1 write enable。</li>
+        <li>未來若 Conv3 加 pipeline，只要延長 valid delay chain。</li>
+      </ul>
+      <p>
+        如果不加 register slice，也可以同拍用 <code>conv1_out_valid</code> 寫入 Conv3 結果；
+        但這會讓 timing boundary 比較不清楚，也比較不利於之後擴展。
+      </p>
+    </section>
+
+    <section>
+      <h2>7. 是否需要 FIFO？</h2>
+      <table>
+        <thead>
+          <tr><th>選項</th><th>適用情境</th><th>Phase9.1 建議</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>No FIFO</td>
+            <td>Conv3 可以每個 Conv1 valid 都立即吃掉；下游先保留 feature_mem1。</td>
+            <td><strong>建議第一版採用</strong></td>
+          </tr>
+          <tr>
+            <td>Register Slice</td>
+            <td>需要切清楚 valid/data timing boundary。</td>
+            <td><strong>建議加入</strong></td>
+          </tr>
+          <tr>
+            <td>Small FIFO</td>
+            <td>Conv1 和 Conv3 有 backpressure，或下游不能每 cycle 接收。</td>
+            <td>暫時不需要，可作為 Phase9 後續選項</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        目前 Conv3 是 1x1 combinational block，且 Phase9.1 後仍會把 Conv3 output 寫入
+        <code>feature_mem1</code>。因此暫時不需要 FIFO。
+        但建議使用 register slice，因為它是最低成本、最清楚的 timing 保護。
+      </p>
+    </section>
+
+    <section>
+      <h2>8. Verification Strategy</h2>
+      <p>
+        Phase9.1 本階段不寫 RTL，因此驗證策略是為 Phase9.2 先定義好。
+      </p>
+      <table>
+        <thead>
+          <tr><th>驗證層級</th><th>目標</th><th>Golden</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Conv1 output stream</td>
+            <td>確認 <code>conv1_out_valid</code> 對應的 q0~q7 與原本 <code>feature_mem0</code> dump 一致</td>
+            <td><code>generated/golden/conv1_out_int8.mem</code></td>
+          </tr>
+          <tr>
+            <td>Conv1 → Conv3 stream</td>
+            <td>確認 Conv3 接到 Conv1 stream 後產生同樣 q0~q3</td>
+            <td><code>generated/golden/conv3_out_int8.mem</code></td>
+          </tr>
+          <tr>
+            <td>End-to-end</td>
+            <td>確認 final output 仍 bit-exact</td>
+            <td><code>generated/golden/output_uint8.mem</code></td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        建議 Phase9.2 testbench 保留 <code>feature_mem1_dump.txt</code>、
+        <code>feature_mem2_dump.txt</code> 與 final result txt。
+        但 <code>feature_mem0_dump.txt</code> 可以改成 optional stream dump，例如：
+      </p>
+      <pre>conv1_stream_dump.txt:
+pixel_index x y q0 q1 q2 q3 q4 q5 q6 q7</pre>
+    </section>
+
+    <section>
+      <h2>9. 預期 RTL_sys 架構</h2>
+      <p>
+        Phase9.2 若開始寫 RTL，建議建立新的 RTL_sys work folder：
+      </p>
+      <pre>model_lite/sr_core/RTL_sys/phase9_streaming_architecture/</pre>
+      <p>
+        預期第一版 module 可以是：
+      </p>
+      <pre>sr_core_top_stream_conv1_conv3_wrapper.v
+tb_sr_core_top_stream_conv1_conv3_wrapper.v</pre>
+      <p>
+        預期資料流：
+      </p>
+      <pre>Input
+-> Conv1 block
+-> register slice
+-> Conv3 block
+-> feature_mem1
+-> PixelShuffle
+-> feature_mem2
+-> OutputStage</pre>
+      <p>
+        這個 wrapper 仍可沿用 Phase8.4b 的 ROM preload / parameter register bank 概念，
+        但不應再例化原本有 <code>feature_mem0</code> 的 verified <code>sr_core_top</code>。
+        它應該在 <code>RTL_sys</code> 中重新組合已 verified 的 lower-level blocks。
+      </p>
+    </section>
+
+    <section>
+      <h2>10. Vivado Streaming Project 規劃</h2>
+      <p>
+        後續 RTL_sys streaming 驗證與模擬，不建議再把 <code>sr_core_bram_pynqz2</code>
+        當作主要驗證專案。Phase9 應建立新的 Streaming Architecture Project。
+      </p>
+      <table>
+        <thead>
+          <tr><th>項目</th><th>建議</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>Project Name</td><td><code>sr_core_streaming_pynqz2</code></td></tr>
+          <tr><td>Project Path</td><td><code>model_lite/sr_core/vivado/sr_core_streaming_pynqz2/</code></td></tr>
+          <tr><td>用途</td><td>Phase9+ streaming architecture simulation / synthesis / IP integration</td></tr>
+          <tr><td>沿用內容</td><td>目前 verified RTL modules、Phase8 ROM IP 設定概念、generated_vivado_hex init files</td></tr>
+          <tr><td>本階段是否建立</td><td>否。本階段只做 architecture analysis。</td></tr>
+        </tbody>
+      </table>
+      <p>
+        若未來需要 Vivado IP 或 GUI 重建紀錄，需遵守
+        <code>vivado-ip-gui-doc-flow</code> skill：保留 Tcl、記錄 GUI 選項、更新 HTML。
+      </p>
+    </section>
+
+    <section>
+      <h2>11. 遇到的風險</h2>
+      <table>
+        <thead>
+          <tr><th>風險</th><th>說明</th><th>建議處理</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Valid/data misalignment</td>
+            <td>Conv1 valid、q0~q7、x/y 若沒有一起 register，Conv3 寫入 index 可能錯位。</td>
+            <td>使用 register slice，同步保存 q0~q7、x、y、valid。</td>
+          </tr>
+          <tr>
+            <td>Conv3 combinational timing 變長</td>
+            <td>Conv1 output 後直接接 Conv3，可能讓一拍內的 combinational path 變長。</td>
+            <td>Conv3 output register 化，valid 延一拍。</td>
+          </tr>
+          <tr>
+            <td>Debug 少了 feature_mem0</td>
+            <td>移除 feature_mem0 後不能直接 dump 中間完整 memory。</td>
+            <td>新增 <code>conv1_stream_dump.txt</code> 作為替代。</td>
+          </tr>
+          <tr>
+            <td>過早全 streaming</td>
+            <td>一次移除 feature_mem0/1/2 會讓 mismatch 難定位。</td>
+            <td>Phase9.1/9.2 只移除 feature_mem0，其他 stage bridge 先保留。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>12. What did we learn?</h2>
+      <p>
+        <code>feature_mem0</code> 原本不是錯誤設計，它是 verification-oriented top 的 debug bridge。
+        但當 Conv1 和 Conv3 都已獨立與 end-to-end PASS 後，這個 bridge 就變成 architecture overhead。
+      </p>
+      <p>
+        Streaming refactor 的第一個安全切入點是 Conv1 → Conv3，因為 Conv3 是 1x1 layer。
+        它沒有 spatial dependency，只需要同一 pixel 的 channel vector。
+      </p>
+      <div class="decision">
+        <p>
+          Phase9.1 的最重要結論：
+          <code>feature_mem0</code> 可以由 <code>conv1_out_valid + q0~q7 + x/y</code>
+          的 pixel-level stream 取代。第一版不需要 FIFO，但建議加入 register slice。
+        </p>
+      </div>
+      <p>
+        下一步 Phase9.2 才開始寫 RTL_sys wrapper，並以 <code>conv3_out_int8.mem</code> 和
+        <code>output_uint8.mem</code> 做驗證。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

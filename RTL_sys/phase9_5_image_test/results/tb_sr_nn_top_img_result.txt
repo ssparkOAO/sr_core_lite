@@ -1,0 +1,9 @@
+Phase9.5 image-level SR inference TB
+Input  : butterflyx2_Y.txt, 128x128 uint8 hex
+Output : sr_output_uint8.txt, 256x256 uint8 decimal
+
+preload_done asserted
+core done asserted
+input sent count = 16384
+output pixel count = 65536
+TB_CAPTURE_PASS

@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase9.5 Image-Level SR Inference Test</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core Index</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase9_project_split_guide.html">Phase9 Guide</a>
+      <a href="phase9_4_bmg_ip_backed_verification.html">Phase9.4</a>
+    </nav>
+
+    <header>
+      <h1>Phase9.5 Image-Level SR Inference Test</h1>
+      <p class="small">文件位置：<code>model_lite/sr_core/html/phase9_5_image_inference_test.html</code></p>
+      <p class="small">Workspace：<code>model_lite/sr_core/RTL_sys/phase9_5_image_test/</code></p>
+      <p class="small">Vivado Project：<code>model_lite/sr_core/vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.xpr</code></p>
+      <div class="decision">
+        <p>
+          Phase9.5 的目標是把測試從 8x8 小圖 golden verification 推進到真正影像等級：
+          testbench 只負責讀取 LR 影像文字檔並做 <code>uint8 - 128</code> 的 input formatting，
+          Conv1、Conv3、PixelShuffle、OutputStage 與 RAM buffer 都由 PL RTL / Vivado BMG IP 完成。
+        </p>
+      </div>
+    </header>
+
+    <section>
+      <h2>1. 為什麼 Phase9.4 不夠</h2>
+      <p>
+        Phase9.4 已經證明 reference-like hierarchy 可以使用 Vivado BMG ROM/RAM IP，
+        並且在 8x8 LR patch 上得到 bit-exact PASS。可是 8x8 top 的 counter、address width、
+        RAM depth 都是小圖尺寸，因此不能直接拿來處理 128x128 LR 影像。
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>項目</th>
+            <th>Phase9.4 小圖</th>
+            <th>Phase9.5 影像測試</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>LR input</td>
+            <td>8x8 = 64 pixels</td>
+            <td>128x128 = 16384 pixels</td>
+          </tr>
+          <tr>
+            <td>HR output</td>
+            <td>16x16 = 256 pixels</td>
+            <td>256x256 = 65536 pixels</td>
+          </tr>
+          <tr>
+            <td>Conv3 feature RAM</td>
+            <td>256 entries of int8</td>
+            <td>16384 entries of packed 4-channel int8</td>
+          </tr>
+          <tr>
+            <td>Output RAM</td>
+            <td>128 words when 16-bit packed</td>
+            <td>32768 words when 16-bit packed</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>2. Phase9.5 架構</h2>
+      <pre>TB image source
+  -> read butterflyx2_Y.txt
+  -> uint8 - 128
+  -> sr_nn_top_img
+       -> parameter ROM IP
+       -> preload parameter register bank
+       -> Conv1 Block, IMG_W=128, IMG_H=128
+       -> Conv1 to Conv3 register slice
+       -> Conv3 Block
+       -> conv3_feature_ram_img
+       -> PixelShuffle x2
+       -> OutputStage packer
+       -> output_image_ram_img
+  -> TB debug readback
+  -> sr_output_uint8.txt
+  -> Python image evaluation</pre>
+      <p>
+        這裡仍然不做 AXI、DMA、PS-PL，也不做 camera input。輸入圖片來源先由 testbench 模擬，
+        但輸入進入 DUT 之後的 CNN 與影像輸出格式轉換都留在 PL RTL 中。
+      </p>
+    </section>
+
+    <section>
+      <h2>3. 新增 RTL 與 Testbench</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>檔案</th>
+            <th>用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>sr_nn_top_img.v</code></td>
+            <td>128x128 image-size top，讓 parameter ROM、Conv block、RAM IP、PixelShuffle 同層可見。</td>
+          </tr>
+          <tr>
+            <td><code>sr_ctrl_img.v</code></td>
+            <td>控制 16384 個 LR pixels，寫入 Conv3 feature RAM，再啟動 PixelShuffle phase。</td>
+          </tr>
+          <tr>
+            <td><code>sr_c1c3_slice_img.v</code></td>
+            <td>Conv1 to Conv3 register slice，保留同一 pixel 的 8-channel output，不建立 feature_mem0。</td>
+          </tr>
+          <tr>
+            <td><code>sr_out_pack_img.v</code></td>
+            <td>包住四個 <code>sr_output_stage</code>，將 PixelShuffle 的 2x2 int8 output 轉成 uint8 packed words。</td>
+          </tr>
+          <tr>
+            <td><code>tb_sr_nn_top_img.v</code></td>
+            <td>讀入影像文字檔，餵入 DUT，完成後從 output RAM debug port 讀回並輸出 SR text。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>4. Vivado BMG IP 規劃</h2>
+      <p>
+        Phase9.5 使用同一個 streaming Vivado project，不新建 project，也不覆蓋 Phase9.4 小圖 flow。
+        參數仍使用既有 6 個 ROM IP，影像尺寸資料另外新增 image-size RAM IP。
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>IP</th>
+            <th>Memory Type</th>
+            <th>Width</th>
+            <th>Depth</th>
+            <th>原因</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>conv3_feature_ram_img</code></td>
+            <td>Simple Dual Port RAM</td>
+            <td>32</td>
+            <td>16384</td>
+            <td>每個 LR pixel 存 4 個 int8 Conv3 output，剛好 packed 成 32-bit word。</td>
+          </tr>
+          <tr>
+            <td><code>output_image_ram_img</code></td>
+            <td>True Dual Port RAM</td>
+            <td>16</td>
+            <td>32768</td>
+            <td>PixelShuffle 每次產生左右相鄰兩個 uint8 pixel，16-bit word 可直接對應水平 pair。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <h3>Vivado GUI 對應設定</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>GUI Option</th>
+            <th>conv3_feature_ram_img</th>
+            <th>output_image_ram_img</th>
+            <th>為什麼</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>IP Catalog</td>
+            <td colspan="3">Block Memory Generator</td>
+          </tr>
+          <tr>
+            <td>Memory Type</td>
+            <td>Simple Dual Port RAM</td>
+            <td>True Dual Port RAM</td>
+            <td>Conv3 RAM 一寫一讀即可；output RAM 需要兩個 write port 對應 PixelShuffle even/odd row。</td>
+          </tr>
+          <tr>
+            <td>Write Width / Read Width</td>
+            <td>32</td>
+            <td>16</td>
+            <td>配合資料 packing，減少 address 數量並讓 schematic 更接近 memory-port architecture。</td>
+          </tr>
+          <tr>
+            <td>Write Depth</td>
+            <td>16384</td>
+            <td>32768</td>
+            <td>128x128 LR 與 256x256 HR packed pair 所需容量。</td>
+          </tr>
+          <tr>
+            <td>Enable Pin</td>
+            <td>Use ENA / ENB Pin</td>
+            <td>Use ENA / ENB Pin</td>
+            <td>控制器明確控制 read/write transaction，方便波形 debug。</td>
+          </tr>
+          <tr>
+            <td>Output Register</td>
+            <td>Disabled</td>
+            <td>Disabled</td>
+            <td>維持 BMG primitive 1-cycle read latency，避免多一拍造成 controller 更複雜。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>5. Testbench Preprocessing</h2>
+      <p>
+        <code>butterflyx2_Y.txt</code> 是 128x128、每行一個 hex uint8。TB 讀取後只做一件事：
+        將 uint8 image domain 轉回模型 core 使用的 signed int8 domain。
+      </p>
+      <pre>input_uint8 0..255
+  -> input_int8_for_core = input_uint8 - 128
+  -> feed sr_nn_top_img</pre>
+      <p>
+        這個動作是 input formatting，不是 CNN 計算。Conv1、Conv3、PixelShuffle 與 final uint8 conversion
+        都在 DUT 內完成。
+      </p>
+    </section>
+
+    <section>
+      <h2>6. Python Evaluation Tool</h2>
+      <p>
+        <code>tools/sr_image_eval.py</code> 負責將 TB 輸出的 <code>sr_output_uint8.txt</code>
+        轉成 PNG，產生 bilinear x2 baseline，並與 HR 圖計算 PSNR。同時它也會呼叫既有 quantized golden flow，
+        驗證 RTL SR output 是否和 software golden bit-exact。
+      </p>
+      <pre>python tools/sr_image_eval.py</pre>
+      <p>輸出檔案：</p>
+      <ul>
+        <li><code>pic/test_pic/result/sr_output.png</code></li>
+        <li><code>pic/test_pic/result/bilinear_x2.png</code></li>
+        <li><code>pic/test_pic/result/software_golden_output.png</code></li>
+        <li><code>pic/test_pic/result/image_eval_report.md</code></li>
+        <li><code>pic/test_pic/result/image_eval_summary.txt</code></li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>7. 驗證流程</h2>
+      <pre>1. Confirm input image size: 128x128 grayscale
+2. Confirm HR image size: 256x256 grayscale
+3. Run Vivado Phase9.5 image simulation
+4. TB writes sr_output_uint8.txt
+5. Run Python image evaluation
+6. Compare RTL output with software golden
+7. Compute PSNR(SR, HR) and PSNR(Bilinear, HR)</pre>
+      <p>Vivado Tcl：</p>
+      <pre>C:\Xilinx\Vivado\2023.1\bin\vivado.bat -mode batch -source model_lite/sr_core/vivado/sr_core_streaming_pynqz2/tcl/run_phase9_5_image_sim.tcl</pre>
+    </section>
+
+    <section>
+      <h2>8. PASS 條件與結果</h2>
+      <pre>TB_CAPTURE_PASS
+RTL vs software golden mismatch count = 0
+RTL vs software golden max abs diff = 0</pre>
+      <p>
+        PSNR 是影像品質評估，不是 bit-exact 硬體正確性的唯一標準。硬體正確性仍以 RTL output
+        與 software golden 完全一致為主。
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>項目</th>
+            <th>結果</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Vivado IP-backed TB</td>
+            <td><strong>TB_CAPTURE_PASS</strong></td>
+          </tr>
+          <tr>
+            <td>Input count</td>
+            <td>16384 pixels</td>
+          </tr>
+          <tr>
+            <td>Output count</td>
+            <td>65536 pixels</td>
+          </tr>
+          <tr>
+            <td>RTL vs software golden</td>
+            <td>mismatch count = 0, max abs diff = 0</td>
+          </tr>
+          <tr>
+            <td>SR vs HR PSNR</td>
+            <td>27.921916 dB</td>
+          </tr>
+          <tr>
+            <td>Bilinear vs HR PSNR</td>
+            <td>25.995107 dB</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>9. 目前遇到的問題</h2>
+      <div class="decision">
+        <p>
+          本階段一開始遇到兩個容易誤判的問題。第一個是 Vivado GUI 開著同一個 project 時，
+          batch Tcl 只能用 read-only 方式開啟 project。第二個是 shell sandbox 不能讓 Vivado 寫入 project，
+          因此需要用允許寫入的方式執行 Vivado batch。
+        </p>
+        <p>
+          解法是先關閉 GUI 中的 streaming project，接著執行
+          <code>run_phase9_5_image_sim.tcl</code>。完成後 Vivado 成功建立
+          <code>conv3_feature_ram_img</code> 與 <code>output_image_ram_img</code>，
+          並完成 image-level simulation。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>10. What Did We Learn?</h2>
+      <p>
+        Phase9.5 的重點不是只把小圖測試放大，而是確認 PL-side CNN + RAM buffer architecture 可以承接真實影像尺寸。
+        128x128 會立刻暴露 address width、RAM depth、counter range、PixelShuffle HR address 等問題，
+        因此它是進入更完整 PL integration 前很重要的一關。
+      </p>
+      <p>
+        這一階段也釐清了 Vivado 專案管理：同一個 `.xpr` 不能同時由 GUI 與 batch Tcl 以可寫方式操作。
+        若要自動建立 IP、更新 source 或跑 simulation，必須確保 project 沒有被另一個 Vivado session 持有。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

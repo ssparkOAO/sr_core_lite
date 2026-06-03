@@ -1,0 +1,11 @@
+Phase9.2 sr_core_top_stream_ram_wrapper verification result
+==============================================================
+Purpose : Conv1 -> Conv3 streaming, conv3_feature_ram raw port, output_image_ram raw port
+Golden  : conv3_out_int8.mem and output_uint8.mem
+
+preload_done asserted
+conv3_feature_ram mismatch count = 0
+output_image_ram mismatch count = 0
+total mismatch count = 0
+max abs diff = 0
+PASS

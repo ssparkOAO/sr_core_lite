@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase9 Project Split Guide</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>快速連結：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase9_3_ref_hierarchy.html">Phase9.3</a>
+      <a href="phase9_4_bmg_ip_backed_verification.html">Phase9.4</a>
+    </nav>
+
+    <header>
+      <h1>Phase9 Project Split Guide</h1>
+      <p class="small">文件位置：<code>model_lite/sr_core/html/phase9_project_split_guide.html</code></p>
+      <div class="decision">
+        <p>
+          這份文件用來區分：哪些檔案只是 behavioral RAM/ROM model 驗證，
+          哪些檔案才是真正透過 Vivado BMG IP wrapper 驗證。
+        </p>
+      </div>
+    </header>
+
+    <section>
+      <h2>1. 一句話分辨</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>工作區</th>
+            <th>代表意義</th>
+            <th>是否真的測 Vivado IP</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>RTL_sys/phase9_3_ref_hier/</code></td>
+            <td>Reference-like hierarchy + behavioral RAM/ROM model</td>
+            <td>否</td>
+          </tr>
+          <tr>
+            <td><code>RTL_sys/phase9_4_ip_verify/</code> + <code>vivado/sr_core_streaming_pynqz2/</code></td>
+            <td>同一個 <code>sr_nn_top</code> 接 Vivado BMG ROM/RAM IP wrapper</td>
+            <td>是</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>2. Phase9.3 資料夾怎麼看</h2>
+      <pre>RTL_sys/phase9_3_ref_hier/
+├─ rtl/       真正的 Phase9.3 hierarchy RTL
+├─ sim/       behavioral RAM/ROM model 與 TB
+├─ results/   behavioral PASS 結果
+└─ work/      xsim log、snapshot、.wdb 波形資料</pre>
+      <p>
+        <code>work/</code> 裡看到的 <code>.wdb</code> 是 Vivado/xsim 波形資料庫。
+        它不是 Verilog source，也不是你要修改的地方。若要看波形，才用 Vivado Simulator 開啟。
+      </p>
+    </section>
+
+    <section>
+      <h2>3. Phase9.4 資料夾怎麼看</h2>
+      <pre>RTL_sys/phase9_4_ip_verify/
+├─ sim/       IP-backed testbench
+└─ results/   IP-backed PASS 結果與 dump</pre>
+      <p>
+        Phase9.4 的 RTL 仍然沿用 <code>phase9_3_ref_hier/rtl/</code> 的
+        <code>sr_nn_top</code>。差異在於 simulation memory 不再使用
+        <code>ram_ip_bhv.v</code>，而是使用 Vivado project 裡的 BMG IP wrapper。
+        目前 project 設定為 <code>target_language = Verilog</code>、
+        <code>simulator_language = Verilog</code>，IP simulation wrapper 使用
+        <code>*.v</code>。
+      </p>
+    </section>
+
+    <section>
+      <h2>4. Vivado Project 現在保留什麼</h2>
+      <p>
+        <code>vivado/sr_core_streaming_pynqz2</code> 是 Phase9.4 的主要 Vivado project。
+        Project source 應保留：
+      </p>
+      <ul>
+        <li><code>RTL_sys/phase9_3_ref_hier/rtl/*.v</code></li>
+        <li><code>RTL/</code> 內已 verified modules</li>
+        <li>8 個 Vivado BMG IP：6 個 parameter ROM、2 個 feature/output RAM</li>
+        <li><code>RTL_sys/phase9_4_ip_verify/sim/tb_sr_nn_top_ip.v</code></li>
+      </ul>
+      <p>
+        Project 內不應再保留舊的 Phase9.2 TB、Phase9 behavioral RAM file、
+        或 Phase8 parameter ROM bank 草稿。
+      </p>
+    </section>
+
+    <section>
+      <h2>5. 如何重新跑 IP-backed 驗證</h2>
+      <pre>C:\Xilinx\Vivado\2023.1\bin\vivado.bat -mode batch -source model_lite/sr_core/vivado/sr_core_streaming_pynqz2/tcl/clean_phase9_4_project.tcl
+C:\Xilinx\Vivado\2023.1\bin\vivado.bat -mode batch -source model_lite/sr_core/vivado/sr_core_streaming_pynqz2/tcl/run_phase9_4_ip_sim.tcl</pre>
+      <p>
+        第一行整理 Vivado project source membership；第二行執行真正 BMG IP-backed simulation。
+      </p>
+      <p>
+        若要確認 project/IP wrapper language：
+      </p>
+      <pre>C:\Xilinx\Vivado\2023.1\bin\vivado.bat -mode batch -source model_lite/sr_core/vivado/sr_core_streaming_pynqz2/tcl/report_ip_language.tcl</pre>
+    </section>
+
+    <section>
+      <h2>6. 常見 Vivado Warning</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>訊息</th>
+            <th>意義</th>
+            <th>目前是否影響 PASS</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>No write access right to the local Tcl store</code></td>
+            <td>Vivado 沒辦法寫入本機 Tcl store，所以退回安裝目錄。</td>
+            <td>不影響本專案模擬。</td>
+          </tr>
+          <tr>
+            <td><code>Unable to auto find GCC executables</code></td>
+            <td>XSim 找不到 GCC path。此設計目前沒有用 DPI/C 混合模擬。</td>
+            <td>不影響本專案模擬。</td>
+          </tr>
+          <tr>
+            <td><code>BMG is using a behavioral model for simulation</code></td>
+            <td>這是 Vivado BMG IP 自己提供的 simulation model，不是我們的 <code>ram_ip_bhv.v</code>。</td>
+            <td>正常；代表正在用 IP wrapper 做模擬。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>7. What Did We Learn?</h2>
+      <p>
+        Phase9.3 是「設計形狀」驗證，Phase9.4 是「Vivado IP 記憶體」驗證。
+        從現在開始，只要你想確認是否真的用 IP，請看 Phase9.4 與
+        <code>sr_core_streaming_pynqz2.xpr</code>，不要只看 Phase9.3 的 behavioral PASS。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,5 @@
+mismatch count = 0
+max abs diff = 0
+SR vs HR PSNR = 27.921916 dB
+Bilinear vs HR PSNR = 25.995107 dB
+PASS
