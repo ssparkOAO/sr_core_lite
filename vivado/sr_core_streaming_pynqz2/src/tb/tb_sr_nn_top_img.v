@@ -72,7 +72,7 @@ module tb_sr_nn_top_img;
     initial begin
         fd_input = $fopen("C:/M11413047/codex/final_proj/model_lite/sr_core/pic/test_pic/butterflyx2_Y.txt", "r");
         fd_result = $fopen("C:/M11413047/codex/final_proj/model_lite/sr_core/RTL_sys/phase9_5_image_test/results/tb_sr_nn_top_img_result.txt", "w");
-        fd_output = $fopen("C:/M11413047/codex/final_proj/model_lite/sr_core/pic/test_pic/result/sr_output_uint8.txt", "w");
+        fd_output = $fopen("C:/M11413047/codex/final_proj/model_lite/sr_core/pic/test_pic/result/sr_output_uint8_test2.txt", "w");
 
         if (fd_input == 0) begin
             $display("ERROR: failed to open butterflyx2_Y.txt");
