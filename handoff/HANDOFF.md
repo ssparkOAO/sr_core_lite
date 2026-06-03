@@ -4,6 +4,57 @@ This handoff is for the `model_lite/sr_core` FPGA-based Super Resolution acceler
 
 The project has moved from module-level RTL verification into system architecture refactor work. Treat this file as the first document to read before continuing the project.
 
+## Quick Start For A New Chat
+
+Read these first, in this order:
+
+```text
+handoff/HANDOFF.md
+RTL_sys/MODULE_RELATIONSHIP_MAP.txt
+vivado/sr_core_streaming_pynqz2/src/manifest/SOURCE_SNAPSHOT_MAP.txt
+vivado/sr_core_streaming_pynqz2/README.txt
+```
+
+Use these project skills when relevant:
+
+```text
+skill/sr-accelerator-rtl-flow/SKILL.md
+skill/sr-token-efficient-workflow/SKILL.md
+skill/sr-core-chat-handoff-flow/SKILL.md
+skill/vivado-ip-gui-doc-flow/SKILL.md
+```
+
+Most future prompts should not paste the full project history. Use a short prompt:
+
+```text
+This is model_lite/sr_core.
+Please read the handoff and relationship maps first.
+Current task: <one sentence>
+Allowed files: <paths>
+Verification level: Level <0-4>
+Do not modify RTL/ golden modules unless explicitly requested.
+```
+
+## Verification Level Guide
+
+Use the smallest level that proves the change:
+
+| Level | Use For | Vivado? |
+|---:|---|---|
+| 0 | HTML, handoff, skill, README, manifest-only edits | No |
+| 1 | Python tools, generated text checks, encoding checks | No |
+| 2 | One small RTL/TB module verification | Maybe xsim only |
+| 3 | Phase9.5 image-level Vivado simulation | Yes |
+| 4 | Vivado synthesis, schematic, timing, hierarchy inspection | Yes |
+
+Current expensive checkpoint:
+
+```text
+Phase9.5 image-level Vivado simulation
+```
+
+Run it only when touching the streaming Vivado top, controller, RAM/IP wiring, Tcl source membership, or image-level TB flow.
+
 ## Project Summary
 
 This project implements a runtime-verified quantized Super Resolution accelerator RTL flow.
@@ -593,6 +644,8 @@ Project-local skill files:
 ```text
 model_lite/sr_core/skill/sr-accelerator-rtl-flow/SKILL.md
 model_lite/sr_core/skill/vivado-ip-gui-doc-flow/SKILL.md
+model_lite/sr_core/skill/sr-token-efficient-workflow/SKILL.md
+model_lite/sr_core/skill/sr-core-chat-handoff-flow/SKILL.md
 ```
 
 Use `sr-accelerator-rtl-flow` as the Codex working rulebook for future SR accelerator RTL tasks.
@@ -600,3 +653,7 @@ Use `sr-accelerator-rtl-flow` as the Codex working rulebook for future SR accele
 Use `vivado-ip-gui-doc-flow` when Codex needs to create, inspect, or modify Vivado IP.
 This second skill is important because every Vivado IP action should leave enough GUI documentation
 for a future manual rebuild inside Vivado.
+
+Use `sr-token-efficient-workflow` to decide how much context to read and which verification level to run.
+
+Use `sr-core-chat-handoff-flow` before ending a long chat or starting a new one.

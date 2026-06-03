@@ -369,3 +369,22 @@ When working on the streaming Vivado project:
 Do not leave Vivado pointing at scattered `RTL/` and `RTL_sys/` source paths for
 the current image-level project. The current Vivado source tree should be easy
 to inspect from `src/`.
+
+## Token And Handoff Skills
+
+For large continuation work, also use:
+
+```text
+model_lite/sr_core/skill/sr-token-efficient-workflow/SKILL.md
+model_lite/sr_core/skill/sr-core-chat-handoff-flow/SKILL.md
+```
+
+Do not reload the whole project history for each task. Start from:
+
+```text
+handoff/HANDOFF.md
+RTL_sys/MODULE_RELATIONSHIP_MAP.txt
+vivado/sr_core_streaming_pynqz2/src/manifest/SOURCE_SNAPSHOT_MAP.txt
+```
+
+Then run only the smallest verification level that proves the change.
