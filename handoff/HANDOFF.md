@@ -50,6 +50,11 @@ The following phases are complete and verified:
 | Phase8.3 | Parameter ROM Prototype | PASS |
 | Phase8.4a | ROM Timing Analysis | PASS |
 | Phase8.4b | ROM Preload Wrapper Integration | PASS |
+| Phase9.1 | Conv1 to Conv3 Streaming Architecture Analysis | Analysis Complete |
+| Phase9.2 | Reference-like RAM/IP Architecture | PASS |
+| Phase9.3 | Reference-like CNN Hierarchy | PASS |
+| Phase9.4 | BMG IP-backed Verification | PASS |
+| Phase9.5 | Image-Level SR Inference Test | PASS |
 
 Latest end-to-end Phase8.4b result:
 
@@ -58,6 +63,49 @@ preload_done asserted
 mismatch count = 0
 max abs diff   = 0
 PASS
+```
+
+Latest Phase9.1 analysis result:
+
+```text
+feature_mem0 can be eliminated.
+Conv3 is 1x1 and only needs the same pixel's 8-channel Conv1 output.
+First streaming refactor should use conv1_out_valid + q0~q7 + x/y.
+No FIFO is required for the first version.
+A register slice is recommended.
+```
+
+Latest Phase9.2 result:
+
+```text
+Conv1 -> Conv3 streaming is implemented in RTL_sys.
+feature_mem0 is removed.
+conv3_feature_ram is exposed as a raw RAM port.
+output_image_ram is exposed as a raw RAM port.
+
+conv3_feature_ram mismatch count = 0
+output_image_ram mismatch count = 0
+total mismatch count = 0
+max abs diff = 0
+PASS
+```
+
+Latest Phase9.5 image-level result:
+
+```text
+Vivado IP-backed TB:
+  TB_CAPTURE_PASS
+  input sent count = 16384
+  output pixel count = 65536
+
+RTL output vs software golden:
+  mismatch count = 0
+  max abs diff = 0
+  PASS
+
+Image quality:
+  SR vs HR PSNR       = 27.921916 dB
+  Bilinear vs HR PSNR = 25.995107 dB
 ```
 
 ## Workspace Rules
@@ -144,6 +192,12 @@ Current Vivado project:
 model_lite/sr_core/vivado/sr_core_bram_pynqz2/sr_core_bram_pynqz2.xpr
 ```
 
+Current streaming / image-level Vivado project:
+
+```text
+model_lite/sr_core/vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.xpr
+```
+
 Existing BMG ROM IPs:
 
 ```text
@@ -194,6 +248,141 @@ Phase8.4b documentation:
 
 ```text
 model_lite/sr_core/html/phase8_4b_rom_preload_wrapper.html
+```
+
+## Phase9.2 Current Architecture
+
+Phase9.2 implements:
+
+```text
+Vivado parameter ROM prototype
+-> preload FSM
+-> parameter register bank
+-> Conv1 block
+-> Conv1 to Conv3 register slice
+-> Conv3 block
+-> conv3_feature_ram raw port
+-> PixelShuffle
+-> OutputStage
+-> output_image_ram raw port
+```
+
+Phase9.2 intentionally does not instantiate the old `sr_core_top`.
+
+Phase9.2 files:
+
+```text
+model_lite/sr_core/RTL_sys/phase9_streaming_architecture/
+  sr_core_top_stream_ram_wrapper.v
+  phase9_behavioral_ram_models.v
+  tb_sr_core_top_stream_ram_wrapper.v
+  tb_sr_core_top_stream_ram_wrapper_result.txt
+  conv1_to_conv3_stream_dump.txt
+  conv3_feature_ram_dump.txt
+  output_image_ram_dump.txt
+```
+
+Phase9.2 Vivado project:
+
+```text
+model_lite/sr_core/vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.xpr
+model_lite/sr_core/vivado/sr_core_streaming_pynqz2/tcl/create_sr_core_streaming_pynqz2.tcl
+```
+
+New Phase9 RAM IP prototypes:
+
+```text
+conv3_feature_ram
+  Simple Dual Port RAM
+  width = 32
+  depth = 64
+  word = {c3, c2, c1, c0}
+
+output_image_ram
+  True Dual Port RAM
+  width = 16
+  depth = 128
+  word = {right_uint8, left_uint8}
+```
+
+Phase9.2 documentation:
+
+```text
+model_lite/sr_core/html/phase9_2_reference_like_ram_architecture.html
+model_lite/sr_core/html/phase9_2_vivado_ram_gui.html
+```
+
+## Phase9.3 to Phase9.5 Current Architecture
+
+Phase9.3 reorganizes the hierarchy so Vivado schematic is easier to read:
+
+```text
+sr_nn_top
+  -> sr_stream_mem_controller style control
+  -> parameter preload controller
+  -> parameter ROM IP
+  -> Conv1 block
+  -> Conv1 to Conv3 register slice
+  -> Conv3 block
+  -> conv3_feature_ram
+  -> PixelShuffle
+  -> output pack
+  -> output_image_ram
+```
+
+Phase9.4 verifies the same hierarchy with real Vivado BMG ROM/RAM IP simulation wrappers.
+
+Phase9.5 extends the test from 8x8 patch verification to a full 128x128 LR image:
+
+```text
+TB reads butterflyx2_Y.txt
+-> TB converts uint8 to signed int8 by subtracting 128
+-> sr_nn_top_img
+-> parameter ROM IP
+-> Conv1, IMG_W=128, IMG_H=128
+-> Conv1 to Conv3 image register slice
+-> Conv3
+-> conv3_feature_ram_img, width=32, depth=16384
+-> PixelShuffle x2
+-> output_image_ram_img, width=16, depth=32768
+-> TB reads output RAM
+-> sr_output_uint8.txt
+-> Python converts to PNG and computes PSNR
+```
+
+Phase9.5 files:
+
+```text
+model_lite/sr_core/RTL_sys/phase9_5_image_test/
+  rtl/sr_nn_top_img.v
+  rtl/sr_ctrl_img.v
+  rtl/sr_c1c3_slice_img.v
+  rtl/sr_out_pack_img.v
+  sim/tb_sr_nn_top_img.v
+  results/tb_sr_nn_top_img_result.txt
+
+model_lite/sr_core/tools/sr_image_eval.py
+model_lite/sr_core/pic/test_pic/result/
+  sr_output_uint8.txt
+  sr_output.png
+  bilinear_x2.png
+  software_golden_output.png
+  image_eval_report.md
+  image_eval_summary.txt
+```
+
+Phase9.5 documentation:
+
+```text
+model_lite/sr_core/html/phase9_5_image_inference_test.html
+```
+
+Important Phase9.5 lesson:
+
+```text
+If Vivado GUI has sr_core_streaming_pynqz2.xpr open, batch Tcl may open it read-only.
+Close the GUI project before running run_phase9_5_image_sim.tcl.
+Vivado generated logs, .jou files, .Xil, and accidental -p folders are disposable.
 ```
 
 ## Verification Philosophy
@@ -335,24 +524,43 @@ Every new phase should explain design reasoning, alternatives, verification file
 The likely next phase is:
 
 ```text
-Phase9 Streaming Architecture Refactor
+Phase10 / Deployment Preparation
 ```
 
-Recommended Phase9 goal:
+Recommended next goals:
 
 ```text
-Reduce stage-memory-oriented verification top toward a clearer streaming architecture,
-while preserving the current PASS behavior and keeping RTL/ untouched.
+1. Clean disposable Vivado runtime files:
+   vivado.jou, vivado.log, vivado_*.backup.*, .Xil, accidental -p folders.
+
+2. Inspect sr_core_streaming_pynqz2 schematic:
+   Confirm parameter ROM IP, Conv blocks, RAM IP, PixelShuffle, and output pack
+   appear at the intended reference-like hierarchy level.
+
+3. Decide next deployment boundary:
+   - Keep TB-driven input for now, or
+   - plan an input RAM / AXI loading interface.
+
+4. Do not modify RTL/ golden modules.
 ```
 
-Before starting Phase9, create:
+Keep:
 
 ```text
-model_lite/sr_core/RTL_sys/phase9_streaming_architecture/
-model_lite/sr_core/html/phase9_streaming_architecture.html
+RTL/ untouched
+input still TB-driven unless explicitly starting AXI/DMA work
+no PS-PL integration until the PL-side RAM/IP architecture is stable
 ```
 
-Start with architecture analysis first, not immediate RTL rewrite.
+Phase9.1 analysis is already documented here:
+
+```text
+model_lite/sr_core/html/phase9_1_conv1_conv3_streaming_analysis.html
+```
+
+Phase9.5 is now complete and PASS. Future work should use the Phase9.5 image-level
+flow as the current PL-side correctness checkpoint instead of returning to only
+the 8x8 patch flow.
 
 ## Codex Skill
 

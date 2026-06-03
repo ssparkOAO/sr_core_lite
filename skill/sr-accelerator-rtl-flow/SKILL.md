@@ -252,11 +252,15 @@ If any appear, treat the HTML as damaged.
 
 ## Handoff Discipline
 
-Before ending a major phase, update:
+Before ending any major phase, PASS verification, Vivado IP milestone, image-level
+test, or GitHub push checkpoint, update:
 
 ```text
 model_lite/sr_core/handoff/HANDOFF.md
 ```
+
+This is mandatory even if HTML was already updated. The handoff is the first file
+to read when resuming the project, so it must not lag behind the latest phase.
 
 The handoff should include:
 
@@ -265,25 +269,70 @@ The handoff should include:
 - verification command/result
 - next recommended phase
 - any hazards or assumptions
+- current Vivado project path if the phase uses Vivado
+- current image / golden / result files if the phase uses image-level testing
+- what not to modify, especially `RTL/` verified modules
+
+If a previous handoff edit is already unstaged, do not ignore it. Read it,
+merge the new phase information into it, and keep it unstaged only if the user
+explicitly asks not to commit handoff updates. Otherwise, include it in the
+phase checkpoint commit.
+
+For Phase9+ image or Vivado work, also record:
+
+- whether the test used behavioral RAM or BMG IP-backed simulation
+- whether the test was 8x8 patch-level or full image-level
+- mismatch count and max abs diff
+- PSNR numbers if image evaluation was performed
+- any Vivado session issue, such as GUI project lock or sandbox write limits
 
 ## Current Phase Boundary
 
-As of the latest handoff, Phase8.4b is PASS:
+As of the latest handoff, Phase9.5 is PASS:
 
 ```text
-Vivado ROM IP
--> preload FSM
--> parameter register bank
--> verified RTL pipeline
--> output_uint8.mem
-
+Vivado BMG ROM/RAM IP-backed image test
+128x128 LR input -> 256x256 SR output
+TB_CAPTURE_PASS
 mismatch count = 0
 max abs diff = 0
 PASS
+
+SR vs HR PSNR       = 27.921916 dB
+Bilinear vs HR PSNR = 25.995107 dB
 ```
 
 Next likely work:
 
 ```text
-Phase9 Streaming Architecture Refactor
+Phase10 / deployment preparation
+or cleanup + schematic inspection of sr_core_streaming_pynqz2
+```
+
+## Vivado Runtime Cleanup Rule
+
+Vivado runtime files are disposable unless the user explicitly asks to keep a log.
+
+Safe to delete after successful verification:
+
+```text
+vivado.jou
+vivado.log
+vivado_*.backup.jou
+vivado_*.backup.log
+xsim_*.backup.jou
+xsim_*.backup.log
+.Xil/
+accidental empty -p/ folders
+```
+
+Do not delete:
+
+```text
+*.xpr
+*.xci
+tcl/
+RTL_sys/
+html/
+pic/test_pic/result/ files that document a PASS checkpoint
 ```
