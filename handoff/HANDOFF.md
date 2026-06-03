@@ -361,7 +361,7 @@ model_lite/sr_core/RTL_sys/phase9_5_image_test/
   sim/tb_sr_nn_top_img.v
   results/tb_sr_nn_top_img_result.txt
 
-model_lite/sr_core/tools/sr_image_eval.py
+model_lite/sr_core/tools/test_img/sr_image_eval.py
 model_lite/sr_core/pic/test_pic/result/
   sr_output_uint8.txt
   sr_output.png
@@ -369,6 +369,30 @@ model_lite/sr_core/pic/test_pic/result/
   software_golden_output.png
   image_eval_report.md
   image_eval_summary.txt
+```
+
+Vivado streaming project source snapshot:
+
+```text
+model_lite/sr_core/vivado/sr_core_streaming_pynqz2/src/
+  rtl/
+  tb/
+  manifest/SOURCE_SNAPSHOT_MAP.txt
+```
+
+Module relationship map:
+
+```text
+model_lite/sr_core/RTL_sys/MODULE_RELATIONSHIP_MAP.txt
+```
+
+Snapshot rule:
+
+```text
+Vivado streaming project uses src/ as a project-local source snapshot.
+RTL/ remains the golden verified source library.
+RTL_sys/ remains the architecture development workspace.
+If original RTL changes, refresh src/ and update SOURCE_SNAPSHOT_MAP.txt.
 ```
 
 Phase9.5 documentation:

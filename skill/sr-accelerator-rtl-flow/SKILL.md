@@ -336,3 +336,36 @@ RTL_sys/
 html/
 pic/test_pic/result/ files that document a PASS checkpoint
 ```
+
+## Vivado Streaming Source Snapshot Rule
+
+The streaming Vivado project uses a project-local source snapshot:
+
+```text
+model_lite/sr_core/vivado/sr_core_streaming_pynqz2/src/
+  rtl/
+  tb/
+  manifest/SOURCE_SNAPSHOT_MAP.txt
+```
+
+This snapshot is for Vivado project readability. It is not the golden source of
+truth.
+
+Original source ownership remains:
+
+```text
+RTL/      -> Golden Verified RTL Module Library
+RTL_sys/  -> Architecture development workspace
+```
+
+When working on the streaming Vivado project:
+
+1. Update and verify the original source in `RTL/` or `RTL_sys/` first.
+2. Refresh the matching file under `vivado/sr_core_streaming_pynqz2/src/`.
+3. Update `src/manifest/SOURCE_SNAPSHOT_MAP.txt`.
+4. Update `RTL_sys/MODULE_RELATIONSHIP_MAP.txt` if module hierarchy changes.
+5. Re-run Phase9.5 image-level verification.
+
+Do not leave Vivado pointing at scattered `RTL/` and `RTL_sys/` source paths for
+the current image-level project. The current Vivado source tree should be easy
+to inspect from `src/`.

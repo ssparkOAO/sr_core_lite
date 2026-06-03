@@ -1,8 +1,13 @@
 import argparse
+import sys
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
+
+TOOLS_DIR = Path(__file__).resolve().parents[1]
+if str(TOOLS_DIR) not in sys.path:
+    sys.path.insert(0, str(TOOLS_DIR))
 
 from sr_core_golden import (
     conv1x1_int8,
@@ -16,7 +21,7 @@ from sr_core_golden import (
 
 
 def sr_dir():
-    return Path(__file__).resolve().parents[1]
+    return Path(__file__).resolve().parents[2]
 
 
 def read_output_txt(path, height, width):

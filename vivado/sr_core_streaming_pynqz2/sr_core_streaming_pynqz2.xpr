@@ -60,7 +60,7 @@
     <Option Name="IPStaticSourceDir" Val="$PIPUSERFILESDIR/ipstatic"/>
     <Option Name="EnableBDX" Val="FALSE"/>
     <Option Name="DSABoardId" Val="pynq-z2"/>
-    <Option Name="WTXSimLaunchSim" Val="4"/>
+    <Option Name="WTXSimLaunchSim" Val="6"/>
     <Option Name="WTModelSimLaunchSim" Val="0"/>
     <Option Name="WTQuestaLaunchSim" Val="0"/>
     <Option Name="WTIesLaunchSim" Val="0"/>
@@ -105,124 +105,92 @@
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../../RTL/sr_pixel_shuffle_x2/pixel_shuffle_core.v">
+      <File Path="$PPRDIR/src/rtl/pixel_shuffle_core.v">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../../RTL_sys/phase9_5_image_test/rtl/sr_c1c3_slice_img.v">
+      <File Path="$PPRDIR/src/rtl/sr_c1c3_slice_img.v">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../../RTL/sr_conv1_3x3_cin1_cout8_block/sr_conv1_3x3_cin1_cout8_block.v">
+      <File Path="$PPRDIR/src/rtl/sr_conv1_3x3_cin1_cout8_block.v">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../../RTL/sr_conv1x1_cin8_cout4_block/sr_conv1x1_cin8_cout4_block.v">
+      <File Path="$PPRDIR/src/rtl/sr_conv1x1_cin8_cout4_block.v">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../../RTL/sr_conv1x1_cin8_cout4_mac/sr_conv1x1_cin8_cout4_mac.v">
+      <File Path="$PPRDIR/src/rtl/sr_conv1x1_cin8_cout4_mac.v">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../../RTL/sr_conv3x3_cin1_cout8_mac/sr_conv3x3_cin1_cout8_mac.v">
+      <File Path="$PPRDIR/src/rtl/sr_conv3x3_cin1_cout8_mac.v">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../../RTL_sys/phase9_5_image_test/rtl/sr_ctrl_img.v">
+      <File Path="$PPRDIR/src/rtl/sr_ctrl_img.v">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../../RTL_sys/phase9_5_image_test/rtl/sr_out_pack_img.v">
+      <File Path="$PPRDIR/src/rtl/sr_out_pack_img.v">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../../RTL/sr_output_stage/sr_output_stage.v">
+      <File Path="$PPRDIR/src/rtl/sr_output_stage.v">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../../RTL_sys/phase9_3_ref_hier/rtl/sr_pctrl.v">
+      <File Path="$PPRDIR/src/rtl/sr_pctrl.v">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../../RTL/sr_requantize/sr_requantize.v">
+      <File Path="$PPRDIR/src/rtl/sr_requantize.v">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../../RTL/sr_conv3x3_cin1_cout8_mac/sr_window_3x3_cin1.v">
+      <File Path="$PPRDIR/src/rtl/sr_window_3x3_cin1.v">
         <FileInfo>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
         </FileInfo>
       </File>
-      <File Path="$PPRDIR/../../RTL_sys/phase9_5_image_test/rtl/sr_nn_top_img.v">
+      <File Path="$PPRDIR/src/rtl/sr_nn_top_img.v">
         <FileInfo>
-          <Attr Name="UsedIn" Val="synthesis"/>
-          <Attr Name="UsedIn" Val="implementation"/>
-          <Attr Name="UsedIn" Val="simulation"/>
-        </FileInfo>
-      </File>
-      <File Path="$PPRDIR/../../RTL_sys/phase9_3_ref_hier/rtl/sr_c1c3_slice.v">
-        <FileInfo>
-          <Attr Name="AutoDisabled" Val="1"/>
-          <Attr Name="UsedIn" Val="synthesis"/>
-          <Attr Name="UsedIn" Val="implementation"/>
-          <Attr Name="UsedIn" Val="simulation"/>
-        </FileInfo>
-      </File>
-      <File Path="$PPRDIR/../../RTL_sys/phase9_3_ref_hier/rtl/sr_ctrl.v">
-        <FileInfo>
-          <Attr Name="AutoDisabled" Val="1"/>
-          <Attr Name="UsedIn" Val="synthesis"/>
-          <Attr Name="UsedIn" Val="implementation"/>
-          <Attr Name="UsedIn" Val="simulation"/>
-        </FileInfo>
-      </File>
-      <File Path="$PPRDIR/../../RTL_sys/phase9_3_ref_hier/rtl/sr_out_pack.v">
-        <FileInfo>
-          <Attr Name="AutoDisabled" Val="1"/>
-          <Attr Name="UsedIn" Val="synthesis"/>
-          <Attr Name="UsedIn" Val="implementation"/>
-          <Attr Name="UsedIn" Val="simulation"/>
-        </FileInfo>
-      </File>
-      <File Path="$PPRDIR/../../RTL_sys/phase9_3_ref_hier/rtl/sr_nn_top.v">
-        <FileInfo>
-          <Attr Name="AutoDisabled" Val="1"/>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>
@@ -277,16 +245,8 @@
     </FileSet>
     <FileSet Name="sim_1" Type="SimulationSrcs" RelSrcDir="$PSRCDIR/sim_1" RelGenDir="$PGENDIR/sim_1">
       <Filter Type="Srcs"/>
-      <File Path="$PPRDIR/../../RTL_sys/phase9_5_image_test/sim/tb_sr_nn_top_img.v">
+      <File Path="$PPRDIR/src/tb/tb_sr_nn_top_img.v">
         <FileInfo>
-          <Attr Name="UsedIn" Val="synthesis"/>
-          <Attr Name="UsedIn" Val="implementation"/>
-          <Attr Name="UsedIn" Val="simulation"/>
-        </FileInfo>
-      </File>
-      <File Path="$PPRDIR/../../RTL_sys/phase9_4_ip_verify/sim/tb_sr_nn_top_ip.v">
-        <FileInfo>
-          <Attr Name="AutoDisabled" Val="1"/>
           <Attr Name="UsedIn" Val="synthesis"/>
           <Attr Name="UsedIn" Val="implementation"/>
           <Attr Name="UsedIn" Val="simulation"/>

@@ -1,0 +1,243 @@
+SR Core RTL_sys Module Relationship Map
+======================================
+
+Purpose
+-------
+This file documents how the current Vivado streaming project, top modules,
+testbenches, RTL_sys modules, verified RTL modules, and Vivado BMG IP blocks are
+connected.
+
+Read this before opening Vivado if you want to know where each source file lives
+and which testbench verifies which top.
+
+
+1. Current Vivado Streaming Project
+-----------------------------------
+
+Project:
+  vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.xpr
+
+Source snapshot folder:
+  vivado/sr_core_streaming_pynqz2/src/
+
+Design top:
+  sr_nn_top_img
+
+Simulation top:
+  tb_sr_nn_top_img
+
+Current verification:
+  Phase9.5 image-level SR inference
+  128x128 LR image -> 256x256 SR image
+  Vivado BMG IP-backed simulation
+  PASS
+
+Latest Phase9.5 result:
+  TB_CAPTURE_PASS
+  input sent count = 16384
+  output pixel count = 65536
+  RTL vs software golden mismatch count = 0
+  RTL vs software golden max abs diff = 0
+
+
+2. Phase9.5 Image-Level Top and Testbench
+-----------------------------------------
+
+tb_sr_nn_top_img
+  snapshot:
+    vivado/sr_core_streaming_pynqz2/src/tb/tb_sr_nn_top_img.v
+  original:
+    RTL_sys/phase9_5_image_test/sim/tb_sr_nn_top_img.v
+  verifies:
+    sr_nn_top_img
+  input:
+    pic/test_pic/butterflyx2_Y.txt
+  output:
+    pic/test_pic/result/sr_output_uint8.txt
+  result:
+    RTL_sys/phase9_5_image_test/results/tb_sr_nn_top_img_result.txt
+
+sr_nn_top_img
+  snapshot:
+    vivado/sr_core_streaming_pynqz2/src/rtl/sr_nn_top_img.v
+  original:
+    RTL_sys/phase9_5_image_test/rtl/sr_nn_top_img.v
+  role:
+    Current image-level CNN + RAM/IP top for the streaming Vivado project.
+
+  hierarchy:
+
+    sr_nn_top_img
+    |
+    +-- conv1_weight_rom
+    |     type: Vivado BMG ROM IP
+    |     xci: vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.srcs/sources_1/ip/conv1_weight_rom/conv1_weight_rom.xci
+    |
+    +-- conv3_weight_rom
+    |     type: Vivado BMG ROM IP
+    |     xci: vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.srcs/sources_1/ip/conv3_weight_rom/conv3_weight_rom.xci
+    |
+    +-- conv1_m0_rom
+    |     type: Vivado BMG ROM IP
+    |     xci: vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.srcs/sources_1/ip/conv1_m0_rom/conv1_m0_rom.xci
+    |
+    +-- conv1_m1_rom
+    |     type: Vivado BMG ROM IP
+    |     xci: vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.srcs/sources_1/ip/conv1_m1_rom/conv1_m1_rom.xci
+    |
+    +-- conv3_m0_rom
+    |     type: Vivado BMG ROM IP
+    |     xci: vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.srcs/sources_1/ip/conv3_m0_rom/conv3_m0_rom.xci
+    |
+    +-- conv3_m1_rom
+    |     type: Vivado BMG ROM IP
+    |     xci: vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.srcs/sources_1/ip/conv3_m1_rom/conv3_m1_rom.xci
+    |
+    +-- sr_pctrl
+    |     snapshot: vivado/sr_core_streaming_pynqz2/src/rtl/sr_pctrl.v
+    |     original: RTL_sys/phase9_3_ref_hier/rtl/sr_pctrl.v
+    |     role: preload parameter ROM data into register banks
+    |
+    +-- sr_ctrl_img
+    |     snapshot: vivado/sr_core_streaming_pynqz2/src/rtl/sr_ctrl_img.v
+    |     original: RTL_sys/phase9_5_image_test/rtl/sr_ctrl_img.v
+    |     role: image-size controller for Conv1 input, Conv3 RAM, PixelShuffle
+    |
+    +-- sr_conv1_3x3_cin1_cout8_block
+    |     snapshot: vivado/sr_core_streaming_pynqz2/src/rtl/sr_conv1_3x3_cin1_cout8_block.v
+    |     original: RTL/sr_conv1_3x3_cin1_cout8_block/sr_conv1_3x3_cin1_cout8_block.v
+    |     role: verified Conv1 full block, IMG_W=128, IMG_H=128
+    |     internal dependencies:
+    |       sr_window_3x3_cin1
+    |       sr_conv3x3_cin1_cout8_mac
+    |       sr_requantize
+    |
+    +-- sr_c1c3_slice_img
+    |     snapshot: vivado/sr_core_streaming_pynqz2/src/rtl/sr_c1c3_slice_img.v
+    |     original: RTL_sys/phase9_5_image_test/rtl/sr_c1c3_slice_img.v
+    |     role: register slice from Conv1 output to Conv3 input
+    |
+    +-- sr_conv1x1_cin8_cout4_block
+    |     snapshot: vivado/sr_core_streaming_pynqz2/src/rtl/sr_conv1x1_cin8_cout4_block.v
+    |     original: RTL/sr_conv1x1_cin8_cout4_block/sr_conv1x1_cin8_cout4_block.v
+    |     role: verified Conv3 1x1 MAC + requant block
+    |     internal dependencies:
+    |       sr_conv1x1_cin8_cout4_mac
+    |       sr_requantize
+    |
+    +-- pixel_shuffle_core
+    |     snapshot: vivado/sr_core_streaming_pynqz2/src/rtl/pixel_shuffle_core.v
+    |     original: RTL/sr_pixel_shuffle_x2/pixel_shuffle_core.v
+    |     role: PixelShuffle x2 write transaction generator
+    |
+    +-- sr_out_pack_img
+    |     snapshot: vivado/sr_core_streaming_pynqz2/src/rtl/sr_out_pack_img.v
+    |     original: RTL_sys/phase9_5_image_test/rtl/sr_out_pack_img.v
+    |     role: output stage wrapper and uint8 pair packer
+    |     internal dependency:
+    |       sr_output_stage
+    |
+    +-- conv3_feature_ram_img
+    |     type: Vivado BMG RAM IP
+    |     xci: vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.srcs/sources_1/ip/conv3_feature_ram_img/conv3_feature_ram_img.xci
+    |     config: Simple Dual Port RAM, width=32, depth=16384
+    |
+    +-- output_image_ram_img
+          type: Vivado BMG RAM IP
+          xci: vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.srcs/sources_1/ip/output_image_ram_img/output_image_ram_img.xci
+          config: True Dual Port RAM, width=16, depth=32768
+
+
+3. Phase9.3 / Phase9.4 / Phase9.5 Difference
+---------------------------------------------
+
+Phase9.3
+  folder:
+    RTL_sys/phase9_3_ref_hier/
+  top:
+    sr_nn_top
+  tb:
+    tb_sr_nn_top
+  memory:
+    sim/ram_ip_bhv.v behavioral RAM model
+  purpose:
+    Reference-like hierarchy and controller debug.
+  result:
+    Behavioral RAM PASS.
+
+Phase9.4
+  folder:
+    RTL_sys/phase9_4_ip_verify/
+  top:
+    sr_nn_top
+  tb:
+    tb_sr_nn_top_ip
+  memory:
+    Vivado BMG IP wrappers
+  purpose:
+    Small 8x8 IP-backed verification.
+  result:
+    BMG IP-backed PASS.
+
+Phase9.5
+  folder:
+    RTL_sys/phase9_5_image_test/
+  top:
+    sr_nn_top_img
+  tb:
+    tb_sr_nn_top_img
+  memory:
+    Vivado BMG IP wrappers, image-size RAM
+  purpose:
+    128x128 image-level inference verification.
+  result:
+    TB_CAPTURE_PASS and RTL vs software golden mismatch count = 0.
+
+
+4. Verified RTL Module Library Dependencies
+-------------------------------------------
+
+These files are Golden Verified RTL modules. Do not modify them for RTL_sys
+refactor unless explicitly requested.
+
+RTL/sr_requantize/sr_requantize.v
+  module: sr_requantize
+
+RTL/sr_conv1_3x3_cin1_cout8_block/sr_conv1_3x3_cin1_cout8_block.v
+  module: sr_conv1_3x3_cin1_cout8_block
+
+RTL/sr_conv3x3_cin1_cout8_mac/sr_window_3x3_cin1.v
+  module: sr_window_3x3_cin1
+
+RTL/sr_conv3x3_cin1_cout8_mac/sr_conv3x3_cin1_cout8_mac.v
+  module: sr_conv3x3_cin1_cout8_mac
+
+RTL/sr_conv1x1_cin8_cout4_block/sr_conv1x1_cin8_cout4_block.v
+  module: sr_conv1x1_cin8_cout4_block
+
+RTL/sr_conv1x1_cin8_cout4_mac/sr_conv1x1_cin8_cout4_mac.v
+  module: sr_conv1x1_cin8_cout4_mac
+
+RTL/sr_pixel_shuffle_x2/pixel_shuffle_core.v
+  module: pixel_shuffle_core
+
+RTL/sr_output_stage/sr_output_stage.v
+  module: sr_output_stage
+
+
+5. Vivado Source Snapshot Rule
+------------------------------
+
+The streaming Vivado project should use:
+
+  vivado/sr_core_streaming_pynqz2/src/rtl/*.v
+  vivado/sr_core_streaming_pynqz2/src/tb/tb_sr_nn_top_img.v
+
+The snapshot is not the golden source of truth.
+
+If a verified RTL module or RTL_sys architecture module changes later:
+
+  1. Update and verify the original source in RTL/ or RTL_sys/.
+  2. Refresh the copied file under vivado/sr_core_streaming_pynqz2/src/.
+  3. Update vivado/sr_core_streaming_pynqz2/src/manifest/SOURCE_SNAPSHOT_MAP.txt.
+  4. Re-run Phase9.5 image-level verification.

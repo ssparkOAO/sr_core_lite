@@ -1,0 +1,225 @@
+SR Core Streaming Vivado Source Snapshot Map
+===========================================
+
+Purpose
+-------
+This folder is a Vivado project source snapshot.
+
+It is used so the streaming Vivado project can show all Phase9.5 source files
+under one local src/ tree instead of requiring the user to jump between RTL/,
+RTL_sys/phase9_3_ref_hier/, and RTL_sys/phase9_5_image_test/.
+
+Important rule:
+
+  RTL/ remains the Golden Verified RTL Module Library.
+  RTL_sys/ remains the architecture development workspace.
+  vivado/sr_core_streaming_pynqz2/src/ is only a project snapshot.
+
+If the original RTL or RTL_sys source changes later, refresh this snapshot and
+update this file.
+
+
+Current Vivado Project
+----------------------
+Project:
+  vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.xpr
+
+Design top:
+  sr_nn_top_img
+
+Simulation top:
+  tb_sr_nn_top_img
+
+Verification:
+  Phase9.5 image-level SR inference test
+  128x128 LR -> 256x256 SR
+  Vivado BMG IP-backed simulation
+
+
+Snapshot Files
+--------------
+
+src/rtl/sr_nn_top_img.v
+  module:
+    sr_nn_top_img
+  original:
+    RTL_sys/phase9_5_image_test/rtl/sr_nn_top_img.v
+  purpose:
+    Phase9.5 image-level top. Connects ROM IP, Conv1, Conv3, RAM IP,
+    PixelShuffle, and output pack.
+  relation:
+    RTL_sys architecture top.
+
+src/rtl/sr_ctrl_img.v
+  module:
+    sr_ctrl_img
+  original:
+    RTL_sys/phase9_5_image_test/rtl/sr_ctrl_img.v
+  purpose:
+    128x128 image-level controller. Feeds Conv1 input, writes Conv3 feature
+    RAM, reads Conv3 feature RAM, and drives PixelShuffle.
+  relation:
+    RTL_sys controller.
+
+src/rtl/sr_c1c3_slice_img.v
+  module:
+    sr_c1c3_slice_img
+  original:
+    RTL_sys/phase9_5_image_test/rtl/sr_c1c3_slice_img.v
+  purpose:
+    One-cycle Conv1-to-Conv3 register slice for image-size coordinates.
+  relation:
+    RTL_sys data alignment module.
+
+src/rtl/sr_out_pack_img.v
+  module:
+    sr_out_pack_img
+  original:
+    RTL_sys/phase9_5_image_test/rtl/sr_out_pack_img.v
+  purpose:
+    Converts PixelShuffle signed int8 2x2 output through output stage and
+    repacks uint8 pairs for output_image_ram_img.
+  relation:
+    RTL_sys output formatting module.
+
+src/rtl/sr_pctrl.v
+  module:
+    sr_pctrl
+  original:
+    RTL_sys/phase9_3_ref_hier/rtl/sr_pctrl.v
+  purpose:
+    Parameter ROM preload controller. Loads ROM output into parameter
+    register banks before core execution.
+  relation:
+    Shared Phase9 RTL_sys controller.
+
+src/rtl/sr_conv1_3x3_cin1_cout8_block.v
+  module:
+    sr_conv1_3x3_cin1_cout8_block
+  original:
+    RTL/sr_conv1_3x3_cin1_cout8_block/sr_conv1_3x3_cin1_cout8_block.v
+  purpose:
+    Verified Conv1 block: 3x3 window + MAC + requant.
+  relation:
+    Golden verified RTL dependency.
+
+src/rtl/sr_window_3x3_cin1.v
+  module:
+    sr_window_3x3_cin1
+  original:
+    RTL/sr_conv3x3_cin1_cout8_mac/sr_window_3x3_cin1.v
+  purpose:
+    Verified 3x3 sliding window generator for Cin=1.
+  relation:
+    Golden verified RTL dependency.
+
+src/rtl/sr_conv3x3_cin1_cout8_mac.v
+  module:
+    sr_conv3x3_cin1_cout8_mac
+  original:
+    RTL/sr_conv3x3_cin1_cout8_mac/sr_conv3x3_cin1_cout8_mac.v
+  purpose:
+    Verified Conv1 3x3 signed int8 MAC.
+  relation:
+    Golden verified RTL dependency.
+
+src/rtl/sr_conv1x1_cin8_cout4_block.v
+  module:
+    sr_conv1x1_cin8_cout4_block
+  original:
+    RTL/sr_conv1x1_cin8_cout4_block/sr_conv1x1_cin8_cout4_block.v
+  purpose:
+    Verified Conv3 block: 1x1 MAC + requant.
+  relation:
+    Golden verified RTL dependency.
+
+src/rtl/sr_conv1x1_cin8_cout4_mac.v
+  module:
+    sr_conv1x1_cin8_cout4_mac
+  original:
+    RTL/sr_conv1x1_cin8_cout4_mac/sr_conv1x1_cin8_cout4_mac.v
+  purpose:
+    Verified Conv3 1x1 signed int8 MAC.
+  relation:
+    Golden verified RTL dependency.
+
+src/rtl/sr_requantize.v
+  module:
+    sr_requantize
+  original:
+    RTL/sr_requantize/sr_requantize.v
+  purpose:
+    Verified TFLite-style requantization.
+  relation:
+    Golden verified RTL dependency.
+
+src/rtl/pixel_shuffle_core.v
+  module:
+    pixel_shuffle_core
+  original:
+    RTL/sr_pixel_shuffle_x2/pixel_shuffle_core.v
+  purpose:
+    Verified PixelShuffle x2 write-transaction generator.
+  relation:
+    Golden verified RTL dependency.
+
+src/rtl/sr_output_stage.v
+  module:
+    sr_output_stage
+  original:
+    RTL/sr_output_stage/sr_output_stage.v
+  purpose:
+    Verified signed int8 to uint8 output stage.
+  relation:
+    Golden verified RTL dependency.
+
+src/tb/tb_sr_nn_top_img.v
+  module:
+    tb_sr_nn_top_img
+  original:
+    RTL_sys/phase9_5_image_test/sim/tb_sr_nn_top_img.v
+  purpose:
+    Phase9.5 image-level testbench. Reads butterflyx2_Y.txt, feeds DUT,
+    reads output_image_ram_img, and writes sr_output_uint8.txt.
+  relation:
+    Verifies sr_nn_top_img.
+
+
+Vivado IP Files Used by This Snapshot
+-------------------------------------
+
+conv1_weight_rom
+  xci:
+    vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.srcs/sources_1/ip/conv1_weight_rom/conv1_weight_rom.xci
+
+conv3_weight_rom
+  xci:
+    vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.srcs/sources_1/ip/conv3_weight_rom/conv3_weight_rom.xci
+
+conv1_m0_rom
+  xci:
+    vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.srcs/sources_1/ip/conv1_m0_rom/conv1_m0_rom.xci
+
+conv1_m1_rom
+  xci:
+    vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.srcs/sources_1/ip/conv1_m1_rom/conv1_m1_rom.xci
+
+conv3_m0_rom
+  xci:
+    vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.srcs/sources_1/ip/conv3_m0_rom/conv3_m0_rom.xci
+
+conv3_m1_rom
+  xci:
+    vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.srcs/sources_1/ip/conv3_m1_rom/conv3_m1_rom.xci
+
+conv3_feature_ram_img
+  xci:
+    vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.srcs/sources_1/ip/conv3_feature_ram_img/conv3_feature_ram_img.xci
+  config:
+    Simple Dual Port RAM, width=32, depth=16384
+
+output_image_ram_img
+  xci:
+    vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.srcs/sources_1/ip/output_image_ram_img/output_image_ram_img.xci
+  config:
+    True Dual Port RAM, width=16, depth=32768

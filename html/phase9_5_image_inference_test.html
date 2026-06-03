@@ -228,11 +228,11 @@
     <section>
       <h2>6. Python Evaluation Tool</h2>
       <p>
-        <code>tools/sr_image_eval.py</code> 負責將 TB 輸出的 <code>sr_output_uint8.txt</code>
+        <code>tools/test_img/sr_image_eval.py</code> 負責將 TB 輸出的 <code>sr_output_uint8.txt</code>
         轉成 PNG，產生 bilinear x2 baseline，並與 HR 圖計算 PSNR。同時它也會呼叫既有 quantized golden flow，
         驗證 RTL SR output 是否和 software golden bit-exact。
       </p>
-      <pre>python tools/sr_image_eval.py</pre>
+      <pre>python tools/test_img/sr_image_eval.py</pre>
       <p>輸出檔案：</p>
       <ul>
         <li><code>pic/test_pic/result/sr_output.png</code></li>
