@@ -11,10 +11,35 @@ Read this before opening Vivado if you want to know where each source file lives
 and which testbench verifies which top.
 
 
-1. Current Vivado Streaming Project
+1. Current Vivado Clean Streaming Project
 -----------------------------------
 
 Project:
+  vivado/sr_core_clean_stream_pynqz2/sr_core_clean_stream_pynqz2.xpr
+
+Source snapshot folder:
+  vivado/sr_core_clean_stream_pynqz2/src/
+
+Design top:
+  sr_top_clean_stream_img
+
+Simulation top:
+  tb_sr_top_clean_stream_img
+
+Current verification:
+  Phase9.6 clean streaming image-level SR inference
+  128x128 LR image -> 256x256 SR image
+  Vivado BMG IP-backed simulation
+  PASS
+
+Latest Phase9.6 result:
+  input sent count = 16384
+  output pixel count = 65536
+  mismatch count = 0
+  max abs diff = 0
+  PASS
+
+Previous Phase9.5 project:
   vivado/sr_core_streaming_pynqz2/sr_core_streaming_pynqz2.xpr
 
 Source snapshot folder:
@@ -38,6 +63,73 @@ Latest Phase9.5 result:
   output pixel count = 65536
   RTL vs software golden mismatch count = 0
   RTL vs software golden max abs diff = 0
+
+
+1.1 Phase9.6 Clean Streaming Top and Testbench
+----------------------------------------------
+
+tb_sr_top_clean_stream_img
+  snapshot:
+    vivado/sr_core_clean_stream_pynqz2/src/tb/tb_sr_top_clean_stream_img.v
+  original:
+    RTL_sys/phase9_6_clean_stream/sim/tb_sr_top_clean_stream_img.v
+  verifies:
+    sr_top_clean_stream_img
+  input:
+    pic/test_pic/butterflyx2_Y.txt
+  golden:
+    pic/test_pic/result/sr_output_uint8.txt
+  output:
+    pic/test_pic/result/sr_output_uint8_clean_stream.txt
+  result:
+    RTL_sys/phase9_6_clean_stream/results/tb_sr_top_clean_stream_img_result.txt
+
+sr_top_clean_stream_img
+  snapshot:
+    vivado/sr_core_clean_stream_pynqz2/src/rtl/sr_top_clean_stream_img.v
+  original:
+    RTL_sys/phase9_6_clean_stream/rtl/sr_top_clean_stream_img.v
+  role:
+    Clean streaming CNN + output RAM top. It removes conv3_feature_ram and
+    exposes formal output RAM readout ports instead of dbg_* ports.
+
+  hierarchy:
+
+    sr_top_clean_stream_img
+    |
+    +-- conv1_weight_rom, conv3_weight_rom, conv1_m0_rom, conv1_m1_rom,
+    |   conv3_m0_rom, conv3_m1_rom
+    |     type: Vivado BMG ROM IP
+    |
+    +-- sr_pctrl
+    |     role: preload ROM data into flat parameter buses
+    |
+    +-- sr_ctrl_clean_stream_img
+    |     role: run Conv1, direct Conv3-to-PixelShuffle streaming, done control
+    |
+    +-- sr_conv1_3x3_cin1_cout8_flat
+    |     role: Conv1 3x3 full block with flat weight/M0/M1 buses
+    |
+    +-- sr_conv1_to_conv3_stream_slice
+    |     role: one-cycle data/valid register slice
+    |
+    +-- sr_conv1x1_cin8_cout4_flat
+    |     role: Conv3 1x1 full block with flat weight/M0/M1 buses
+    |
+    +-- pixel_shuffle_core
+    |     role: PixelShuffle x2 write transaction generation
+    |
+    +-- sr_output_pack2x2_uint8
+    |     role: int8 to uint8 output conversion and 2-pixel packing
+    |
+    +-- output_image_ram
+          type: Vivado BMG RAM IP
+          config: True Dual Port RAM, width=16, depth=32768
+
+  intentionally absent:
+    conv3_feature_ram
+    dbg_c3_rd_* ports
+    dbg_out_rd_* ports
 
 
 2. Phase9.5 Image-Level Top and Testbench

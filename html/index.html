@@ -2,14 +2,13 @@
 <html lang="zh-Hant">
 <head>
   <meta charset="utf-8">
-  <title>SR Core 最小功能設計紀錄</title>
+  <title>SR Core Project Index</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="page">
     <nav class="quick-links">
-      <span>相關目錄：</span>
-      <a href="index.html">SR Core Index</a>
+      <span>相關文件：</span>
       <a href="rtl/index.html">RTL Modules</a>
       <a href="RTL_sys_index.html">RTL_sys</a>
       <a href="phase8_index.html">Phase8</a>
@@ -17,16 +16,16 @@
     </nav>
 
     <header>
-      <h1>SR Core 最小功能設計紀錄</h1>
-      <p class="small">位置：<code>model_lite/sr_core/html/index.html</code></p>
+      <h1>SR Core Project Index</h1>
+      <p class="small">文件位置：<code>model_lite/sr_core/html/index.html</code></p>
       <p>
-        本頁是 Super Resolution accelerator 專案的文件入口。現在專案已從單一 module verification
-        推進到 RTL_sys system architecture 與 image-level inference test。
+        本專案是 runtime-verified quantized Super Resolution accelerator RTL。
+        目前已從逐 module verification 推進到 RTL_sys system architecture 與 Vivado IP-backed image-level verification。
       </p>
     </header>
 
     <section>
-      <h2>1. 最常用入口</h2>
+      <h2>1. 常用入口</h2>
       <table>
         <thead>
           <tr>
@@ -38,28 +37,23 @@
         <tbody>
           <tr>
             <td>RTL Modules</td>
-            <td>已驗證的 Golden RTL module library。</td>
+            <td>已驗證 golden RTL module library。</td>
             <td><a href="rtl/index.html">rtl/index.html</a></td>
           </tr>
           <tr>
             <td>RTL_sys</td>
-            <td>系統架構重構與 Vivado ROM/RAM/IP integration 工作區。</td>
+            <td>系統架構 refactor、Vivado ROM/RAM/IP integration。</td>
             <td><a href="RTL_sys_index.html">RTL_sys_index.html</a></td>
           </tr>
           <tr>
             <td>Phase8</td>
-            <td>Weight Memory / Parameter ROM architecture refactor 完整紀錄。</td>
+            <td>Weight Memory / Parameter ROM architecture refactor。</td>
             <td><a href="phase8_index.html">phase8_index.html</a></td>
           </tr>
           <tr>
             <td>Phase9 Guide</td>
-            <td>Behavioral model、Vivado IP-backed project 與資料夾分工說明。</td>
+            <td>Behavioral model、Vivado IP-backed project、source snapshot 管理。</td>
             <td><a href="phase9_project_split_guide.html">phase9_project_split_guide.html</a></td>
-          </tr>
-          <tr>
-            <td>Phase9.5</td>
-            <td>128x128 image-level SR inference test，含 PSNR 評估流程。</td>
-            <td><a href="phase9_5_image_inference_test.html">phase9_5_image_inference_test.html</a></td>
           </tr>
           <tr>
             <td>Deployment Roadmap</td>
@@ -71,7 +65,7 @@
     </section>
 
     <section>
-      <h2>2. Project Workspace Split</h2>
+      <h2>2. Workspace Split</h2>
       <table>
         <thead>
           <tr>
@@ -83,32 +77,31 @@
         <tbody>
           <tr>
             <td>RTL Modules</td>
-            <td>
-              已驗證模組。保留目前 PASS 的 Conv1、Conv3、PixelShuffle、OutputStage、
-              sr_core_top，作為 Golden RTL Version。
-            </td>
+            <td>Golden verified module library。未明確要求時不要修改。</td>
             <td><a href="rtl/index.html">rtl/index.html</a></td>
           </tr>
           <tr>
             <td>RTL System Architecture</td>
-            <td>
-              系統整合與未來開發。Weight Memory、Streaming、BRAM、AXI、DMA、PS-PL integration
-              都從這裡開始。
-            </td>
+            <td>新的 architecture refactor workspace，包含 Phase8/Phase9+。</td>
             <td><a href="RTL_sys_index.html">RTL_sys_index.html</a></td>
+          </tr>
+          <tr>
+            <td>Vivado Projects</td>
+            <td>Vivado IP-backed verification 與 schematic/hierarchy 檢查。</td>
+            <td><code>vivado/</code></td>
           </tr>
         </tbody>
       </table>
       <div class="decision">
         <p>
-          新規則：未來新的 architecture refactor 不直接修改 <code>model_lite/sr_core/RTL</code>。
-          <code>RTL</code> 保留為 verified module library；<code>RTL_sys</code> 作為 accelerator system architecture workspace。
+          新 architecture work 應放在 <code>RTL_sys/</code>。已驗證的 <code>RTL/</code>
+          保留作為 golden module library。
         </p>
       </div>
     </section>
 
     <section>
-      <h2>3. 已完成 RTL 驗證</h2>
+      <h2>3. RTL Verification Phases</h2>
       <table>
         <thead>
           <tr>
@@ -118,49 +111,18 @@
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td>Phase1</td>
-            <td>sr_requantize</td>
-            <td><a href="rtl/phase1_requantize.html">rtl/phase1_requantize.html</a></td>
-          </tr>
-          <tr>
-            <td>Phase2</td>
-            <td>Conv3 1x1 MAC</td>
-            <td><a href="phase2_conv1x1_mac.html">phase2_conv1x1_mac.html</a></td>
-          </tr>
-          <tr>
-            <td>Phase2.5</td>
-            <td>Conv3 1x1 MAC + requant</td>
-            <td><a href="phase2_5_conv3_block.html">phase2_5_conv3_block.html</a></td>
-          </tr>
-          <tr>
-            <td>Phase3</td>
-            <td>PixelShuffle transaction core</td>
-            <td><a href="phase3_pixel_shuffle_transaction_core.html">phase3_pixel_shuffle_transaction_core.html</a></td>
-          </tr>
-          <tr>
-            <td>Phase4</td>
-            <td>Conv1 window + 3x3 MAC</td>
-            <td><a href="phase4_conv1_3x3_mac.html">phase4_conv1_3x3_mac.html</a></td>
-          </tr>
-          <tr>
-            <td>Phase4.5</td>
-            <td>Conv1 full quantized block</td>
-            <td><a href="phase4_5_conv1_full_block.html">phase4_5_conv1_full_block.html</a></td>
-          </tr>
+          <tr><td>Phase1</td><td>sr_requantize</td><td><a href="rtl/phase1_requantize.html">rtl/phase1_requantize.html</a></td></tr>
+          <tr><td>Phase2</td><td>Conv3 1x1 MAC</td><td><a href="phase2_conv1x1_mac.html">phase2_conv1x1_mac.html</a></td></tr>
+          <tr><td>Phase2.5</td><td>Conv3 1x1 MAC + requant</td><td><a href="phase2_5_conv3_block.html">phase2_5_conv3_block.html</a></td></tr>
+          <tr><td>Phase3</td><td>PixelShuffle transaction core</td><td><a href="phase3_pixel_shuffle_transaction_core.html">phase3_pixel_shuffle_transaction_core.html</a></td></tr>
+          <tr><td>Phase4</td><td>Conv1 window + 3x3 MAC</td><td><a href="phase4_conv1_3x3_mac.html">phase4_conv1_3x3_mac.html</a></td></tr>
+          <tr><td>Phase4.5</td><td>Conv1 full quantized block</td><td><a href="phase4_5_conv1_full_block.html">phase4_5_conv1_full_block.html</a></td></tr>
           <tr>
             <td>Phase5 / Phase6</td>
             <td>Output clip / output stage</td>
-            <td>
-              <a href="phase5_output_clip.html">phase5_output_clip.html</a><br>
-              <a href="phase6_output_stage.html">phase6_output_stage.html</a>
-            </td>
+            <td><a href="phase5_output_clip.html">phase5_output_clip.html</a> / <a href="phase6_output_stage.html">phase6_output_stage.html</a></td>
           </tr>
-          <tr>
-            <td>Phase7</td>
-            <td>sr_core_top end-to-end verification</td>
-            <td><a href="phase7_sr_core_top.html">phase7_sr_core_top.html</a></td>
-          </tr>
+          <tr><td>Phase7</td><td>sr_core_top end-to-end verification</td><td><a href="phase7_sr_core_top.html">phase7_sr_core_top.html</a></td></tr>
         </tbody>
       </table>
     </section>
@@ -177,75 +139,13 @@
           </tr>
         </thead>
         <tbody>
-          <tr>
-            <td>Phase8</td>
-            <td>Weight Memory Architecture Refactor</td>
-            <td>PASS through Phase8.4b</td>
-            <td><a href="phase8_index.html">phase8_index.html</a></td>
-          </tr>
-          <tr>
-            <td>Phase9.1</td>
-            <td>Conv1 to Conv3 streaming analysis</td>
-            <td>Analysis Complete</td>
-            <td><a href="phase9_1_conv1_conv3_streaming_analysis.html">phase9_1_conv1_conv3_streaming_analysis.html</a></td>
-          </tr>
-          <tr>
-            <td>Phase9.2</td>
-            <td>Reference-like RAM/IP Architecture</td>
-            <td>Behavioral RAM PASS / IP Created</td>
-            <td>
-              <a href="phase9_2_reference_like_ram_architecture.html">phase9_2_reference_like_ram_architecture.html</a><br>
-              <a href="phase9_2_vivado_ram_gui.html">phase9_2_vivado_ram_gui.html</a>
-            </td>
-          </tr>
-          <tr>
-            <td>Phase9.3</td>
-            <td>Reference-like CNN hierarchy</td>
-            <td>Behavioral RAM PASS</td>
-            <td><a href="phase9_3_ref_hierarchy.html">phase9_3_ref_hierarchy.html</a></td>
-          </tr>
-          <tr>
-            <td>Phase9.4</td>
-            <td>BMG IP-backed verification</td>
-            <td>PASS</td>
-            <td><a href="phase9_4_bmg_ip_backed_verification.html">phase9_4_bmg_ip_backed_verification.html</a></td>
-          </tr>
-          <tr>
-            <td>Phase9.5</td>
-            <td>Image-level SR inference test</td>
-            <td>PASS</td>
-            <td><a href="phase9_5_image_inference_test.html">phase9_5_image_inference_test.html</a></td>
-          </tr>
-        </tbody>
-      </table>
-    </section>
-
-    <section>
-      <h2>5. 學習與工具文件</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>文件</th>
-            <th>用途</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td><a href="tflite_quant_to_hw.html">tflite_quant_to_hw.html</a></td>
-            <td>TFLite quantization 到硬體整數運算的概念。</td>
-          </tr>
-          <tr>
-            <td><a href="runtime_verified_golden_flow.html">runtime_verified_golden_flow.html</a></td>
-            <td>runtime-verified golden flow 紀錄。</td>
-          </tr>
-          <tr>
-            <td><a href="tool_convert_generated_to_vivado_hex.html">tool_convert_generated_to_vivado_hex.html</a></td>
-            <td>將 generated decimal data 轉 Vivado two's-complement hex / COE。</td>
-          </tr>
-          <tr>
-            <td><a href="python_toolchain_record.html">python_toolchain_record.html</a></td>
-            <td>Python toolchain 與資料產生紀錄。</td>
-          </tr>
+          <tr><td>Phase8</td><td>Weight Memory Architecture Refactor</td><td>PASS through Phase8.4b</td><td><a href="phase8_index.html">phase8_index.html</a></td></tr>
+          <tr><td>Phase9.1</td><td>Conv1 to Conv3 Streaming Analysis</td><td>Analysis Complete</td><td><a href="phase9_1_conv1_conv3_streaming_analysis.html">phase9_1_conv1_conv3_streaming_analysis.html</a></td></tr>
+          <tr><td>Phase9.2</td><td>Reference-like RAM/IP Architecture</td><td>PASS</td><td><a href="phase9_2_reference_like_ram_architecture.html">phase9_2_reference_like_ram_architecture.html</a></td></tr>
+          <tr><td>Phase9.3</td><td>Reference-like CNN Hierarchy</td><td>PASS</td><td><a href="phase9_3_ref_hierarchy.html">phase9_3_ref_hierarchy.html</a></td></tr>
+          <tr><td>Phase9.4</td><td>BMG IP-backed Verification</td><td>PASS</td><td><a href="phase9_4_bmg_ip_backed_verification.html">phase9_4_bmg_ip_backed_verification.html</a></td></tr>
+          <tr><td>Phase9.5</td><td>Image-Level SR Inference Test</td><td>PASS</td><td><a href="phase9_5_image_inference_test.html">phase9_5_image_inference_test.html</a></td></tr>
+          <tr><td>Phase9.6</td><td>Clean Streaming CNN / RAM Architecture</td><td>PASS</td><td><a href="phase9_6_clean_streaming_architecture.html">phase9_6_clean_streaming_architecture.html</a></td></tr>
         </tbody>
       </table>
     </section>

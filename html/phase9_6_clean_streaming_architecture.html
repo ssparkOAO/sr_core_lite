@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase9.6 Clean Streaming Architecture</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關文件：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase9_5_image_inference_test.html">Phase9.5</a>
+      <a href="phase9_project_split_guide.html">Phase9 Guide</a>
+    </nav>
+
+    <header>
+      <h1>Phase9.6 Clean Streaming CNN / RAM Architecture</h1>
+      <p class="small">文件位置：<code>model_lite/sr_core/html/phase9_6_clean_streaming_architecture.html</code></p>
+      <p class="small">RTL_sys：<code>model_lite/sr_core/RTL_sys/phase9_6_clean_stream/</code></p>
+      <p class="small">Vivado Project：<code>model_lite/sr_core/vivado/sr_core_clean_stream_pynqz2/</code></p>
+      <div class="decision">
+        <p>
+          本階段目標不是重新設計 CNN 演算法，而是把 Phase9.5 已經 PASS 的 image-level flow
+          整理成更像實際 PL datapath 的乾淨 hierarchy：Conv1、Conv3、ROM IP、Output RAM IP
+          保持同層可見，Conv3 output 直接 streaming 到 PixelShuffle。
+        </p>
+      </div>
+    </header>
+
+    <section>
+      <h2>1. Phase9.5 遇到的架構問題</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>問題</th>
+            <th>影響</th>
+            <th>Phase9.6 修正</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Conv1 block 有 <code>win00_dbg</code> 系列 output</td>
+            <td>這些 window debug 線在 image top 沒使用，會讓 schematic 和 port list 變吵。</td>
+            <td>新的 <code>sr_conv1_3x3_cin1_cout8_flat</code> 不再輸出 window debug port。</td>
+          </tr>
+          <tr>
+            <td>Conv1 / Conv3 parameter ports 過度展開</td>
+            <td>top 需要連接大量 <code>w000</code>、<code>m0_0</code>、<code>m1_0</code> 類 port。</td>
+            <td>改成分組 flat bus，保留平行運算但減少 top-level wiring。</td>
+          </tr>
+          <tr>
+            <td>Conv3 feature RAM 不必要</td>
+            <td>Conv3 是 1x1，同一 pixel 的 4-channel output 可以直接送 PixelShuffle。</td>
+            <td>移除 <code>conv3_feature_ram</code>，Conv3 output 直接 streaming 到 PixelShuffle。</td>
+          </tr>
+          <tr>
+            <td>top-level <code>dbg_*</code> port 太多</td>
+            <td>debug readback 介面混在正式 top interface 裡，不像最後 PL module。</td>
+            <td>改成正式 output RAM readout：<code>out_rd_en/out_rd_addr/out_rd_data</code>。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>2. 新資料流</h2>
+      <pre>TB input source
+  -> sr_conv1_3x3_cin1_cout8_flat
+  -> sr_conv1_to_conv3_stream_slice
+  -> sr_conv1x1_cin8_cout4_flat
+  -> pixel_shuffle_core
+  -> sr_output_pack2x2_uint8
+  -> output_image_ram</pre>
+      <p>
+        這個 flow 保留 output image RAM，因為最後影像需要被外部讀回；但不再保留 Conv3 feature RAM，
+        因為那只是 Phase9.5 為了拆階段 debug 而留下的中間 buffer。
+      </p>
+    </section>
+
+    <section>
+      <h2>3. Flat Bus 不是序列化</h2>
+      <p>
+        Flat bus 只是把多個同類參數包成一條寬 bus，例如 Conv1 weight 是
+        <code>conv1_weight_flat[575:0]</code>。block 內部仍拆成 signed wire 後同時接到 MAC，
+        所以 parallel MAC datapath 沒有被改成 time-multiplex，也沒有犧牲平行化。
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Layer</th>
+            <th>Flat bus</th>
+            <th>內容</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Conv1 3x3</td>
+            <td><code>conv1_weight_flat[575:0]</code></td>
+            <td>72 個 signed int8 weight</td>
+          </tr>
+          <tr>
+            <td>Conv1 requant</td>
+            <td><code>conv1_m0_flat[255:0]</code>, <code>conv1_m1_flat[511:0]</code></td>
+            <td>8 組 M0/M1</td>
+          </tr>
+          <tr>
+            <td>Conv3 1x1</td>
+            <td><code>conv3_weight_flat[255:0]</code></td>
+            <td>32 個 signed int8 weight</td>
+          </tr>
+          <tr>
+            <td>Conv3 requant</td>
+            <td><code>conv3_m0_flat[127:0]</code>, <code>conv3_m1_flat[255:0]</code></td>
+            <td>4 組 M0/M1</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>4. Vivado Project</h2>
+      <p>
+        新 project 使用功能導向命名：<code>sr_core_clean_stream_pynqz2</code>。
+        檔名不使用 <code>p96</code> 這種無語意縮寫，保留 kernel、Cin、Cout 等資訊。
+      </p>
+      <pre>vivado/sr_core_clean_stream_pynqz2/
+  src/rtl/
+  src/tb/
+  src/manifest/SOURCE_SNAPSHOT_MAP.txt
+  tcl/run_phase9_6_clean_stream_sim.tcl</pre>
+      <p>
+        此 project 會建立 6 個 parameter ROM IP 與 1 個 <code>output_image_ram</code>。
+        不建立 <code>conv3_feature_ram</code>。
+      </p>
+    </section>
+
+    <section>
+      <h2>5. 驗證方式</h2>
+      <pre>1. TB reads butterflyx2_Y.txt
+2. TB converts uint8 input to signed int8 by subtracting 128
+3. PL RTL runs Conv1 -> Conv3 -> PixelShuffle -> OutputStage
+4. PL writes packed uint8 output into output_image_ram
+5. TB reads output_image_ram through formal out_rd_* port
+6. TB writes sr_output_uint8_clean_stream.txt
+7. TB compares with Phase9.5 sr_output_uint8.txt</pre>
+      <p>
+        本階段不再產生 PNG，也不計算 PSNR。Phase9.6 的目標是確認乾淨 streaming architecture
+        與 Phase9.5 已驗證輸出完全一致。
+      </p>
+    </section>
+
+    <section>
+      <h2>6. PASS 條件</h2>
+      <pre>input sent count = 16384
+output pixel count = 65536
+mismatch count = 0
+max abs diff = 0
+PASS</pre>
+      <p>
+        比對基準是 <code>pic/test_pic/result/sr_output_uint8.txt</code>，
+        輸出檔是 <code>pic/test_pic/result/sr_output_uint8_clean_stream.txt</code>。
+      </p>
+    </section>
+
+    <section>
+      <h2>7. What Did We Learn?</h2>
+      <div class="decision">
+        <p>
+          Phase9.6 釐清了「介面乾淨」和「運算平行」不是衝突的。參數可以用 flat bus
+          收斂 port 數，但 CNN block 內仍保持清楚的 parallel datapath。中間 feature RAM
+          只有在需要跨階段保存或外部讀寫時才合理；Conv3 到 PixelShuffle 這段可以直接 streaming。
+        </p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

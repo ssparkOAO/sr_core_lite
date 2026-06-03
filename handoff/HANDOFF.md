@@ -106,6 +106,7 @@ The following phases are complete and verified:
 | Phase9.3 | Reference-like CNN Hierarchy | PASS |
 | Phase9.4 | BMG IP-backed Verification | PASS |
 | Phase9.5 | Image-Level SR Inference Test | PASS |
+| Phase9.6 | Clean Streaming CNN / RAM Architecture | PASS |
 
 Latest end-to-end Phase8.4b result:
 
@@ -157,6 +158,19 @@ RTL output vs software golden:
 Image quality:
   SR vs HR PSNR       = 27.921916 dB
   Bilinear vs HR PSNR = 25.995107 dB
+```
+
+Latest Phase9.6 clean streaming result:
+
+```text
+Vivado IP-backed TB:
+  input sent count = 16384
+  output pixel count = 65536
+
+Clean stream output vs Phase9.5 output:
+  mismatch count = 0
+  max abs diff = 0
+  PASS
 ```
 
 ## Workspace Rules

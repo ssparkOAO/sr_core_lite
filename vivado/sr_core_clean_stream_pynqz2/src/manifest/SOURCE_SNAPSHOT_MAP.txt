@@ -1,0 +1,105 @@
+SR Core Clean Stream Vivado Source Snapshot Map
+==============================================
+
+Purpose
+-------
+This folder is a Vivado project source snapshot for:
+
+  vivado/sr_core_clean_stream_pynqz2
+
+It is not the golden source library.
+
+Original source ownership:
+
+  RTL/      -> Golden Verified RTL Module Library
+  RTL_sys/  -> Architecture development workspace
+
+
+Phase9.6 clean streaming RTL
+----------------------------
+
+src/rtl/sr_top_clean_stream_img.v
+  original: RTL_sys/phase9_6_clean_stream/rtl/sr_top_clean_stream_img.v
+  module:   sr_top_clean_stream_img
+  purpose:  Clean streaming image top. No conv3_feature_ram, no dbg_* ports.
+
+src/rtl/sr_ctrl_clean_stream_img.v
+  original: RTL_sys/phase9_6_clean_stream/rtl/sr_ctrl_clean_stream_img.v
+  module:   sr_ctrl_clean_stream_img
+  purpose:  Control preload/core run and direct Conv3-to-PixelShuffle streaming.
+
+src/rtl/sr_conv1_3x3_cin1_cout8_flat.v
+  original: RTL_sys/phase9_6_clean_stream/rtl/sr_conv1_3x3_cin1_cout8_flat.v
+  module:   sr_conv1_3x3_cin1_cout8_flat
+  purpose:  Conv1 3x3 full block with flat weight/M0/M1 buses.
+
+src/rtl/sr_conv1x1_cin8_cout4_flat.v
+  original: RTL_sys/phase9_6_clean_stream/rtl/sr_conv1x1_cin8_cout4_flat.v
+  module:   sr_conv1x1_cin8_cout4_flat
+  purpose:  Conv3 1x1 full block with flat weight/M0/M1 buses.
+
+src/rtl/sr_conv1_to_conv3_stream_slice.v
+  original: RTL_sys/phase9_6_clean_stream/rtl/sr_conv1_to_conv3_stream_slice.v
+  module:   sr_conv1_to_conv3_stream_slice
+  purpose:  One-cycle register slice for Conv1 output to Conv3 input.
+
+src/rtl/sr_output_pack2x2_uint8.v
+  original: RTL_sys/phase9_6_clean_stream/rtl/sr_output_pack2x2_uint8.v
+  module:   sr_output_pack2x2_uint8
+  purpose:  Convert PixelShuffle int8 packed output to uint8 packed output RAM writes.
+
+src/tb/tb_sr_top_clean_stream_img.v
+  original: RTL_sys/phase9_6_clean_stream/sim/tb_sr_top_clean_stream_img.v
+  module:   tb_sr_top_clean_stream_img
+  purpose:  Image-level TB, compares clean stream output txt against Phase9.5 output txt.
+
+
+Shared architecture controller
+------------------------------
+
+src/rtl/sr_pctrl.v
+  original: RTL_sys/phase9_3_ref_hier/rtl/sr_pctrl.v
+  module:   sr_pctrl
+  purpose:  Parameter ROM preload controller, outputs flat parameter buses.
+
+
+Golden verified dependency snapshots
+------------------------------------
+
+src/rtl/sr_requantize.v
+  original: RTL/sr_requantize/sr_requantize.v
+  module:   sr_requantize
+
+src/rtl/sr_window_3x3_cin1.v
+  original: RTL/sr_conv3x3_cin1_cout8_mac/sr_window_3x3_cin1.v
+  module:   sr_window_3x3_cin1
+
+src/rtl/sr_conv3x3_cin1_cout8_mac.v
+  original: RTL/sr_conv3x3_cin1_cout8_mac/sr_conv3x3_cin1_cout8_mac.v
+  module:   sr_conv3x3_cin1_cout8_mac
+
+src/rtl/sr_conv1x1_cin8_cout4_mac.v
+  original: RTL/sr_conv1x1_cin8_cout4_mac/sr_conv1x1_cin8_cout4_mac.v
+  module:   sr_conv1x1_cin8_cout4_mac
+
+src/rtl/pixel_shuffle_core.v
+  original: RTL/sr_pixel_shuffle_x2/pixel_shuffle_core.v
+  module:   pixel_shuffle_core
+
+src/rtl/sr_output_stage.v
+  original: RTL/sr_output_stage/sr_output_stage.v
+  module:   sr_output_stage
+
+
+Vivado IP expected in this project
+----------------------------------
+
+conv1_weight_rom
+conv3_weight_rom
+conv1_m0_rom
+conv1_m1_rom
+conv3_m0_rom
+conv3_m1_rom
+output_image_ram
+
+This project intentionally does not instantiate conv3_feature_ram.

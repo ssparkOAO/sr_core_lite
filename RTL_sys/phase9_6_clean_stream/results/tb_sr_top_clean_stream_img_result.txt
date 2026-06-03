@@ -1,0 +1,12 @@
+Phase9.6 clean streaming image-level SR TB
+Input    : butterflyx2_Y.txt
+Golden   : Phase9.5 sr_output_uint8.txt
+Output   : sr_output_uint8_clean_stream.txt
+
+preload_done asserted
+core done asserted
+input sent count = 16384
+output pixel count = 65536
+mismatch count = 0
+max abs diff = 0
+PASS
