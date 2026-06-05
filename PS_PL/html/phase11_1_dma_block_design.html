@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase11.1 DMA Block Design</title>
+  <link rel="stylesheet" href="../../html/style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>PS_PL links:</span>
+      <a href="index.html">PS_PL index</a>
+      <a href="phase11/phase11_1_dma_block_design.html">Phase11.1 詳細文件</a>
+      <a href="phase11/phase11_1_timing_analysis.html">Timing analysis</a>
+      <a href="phase11/phase11_1_project_sources.html">Source / IP / COE 清單</a>
+    </nav>
+
+    <header>
+      <h1>Phase11.1 DMA Block Design</h1>
+      <p class="small">位置：<code>model_lite/sr_core/PS_PL/html/phase11_1_dma_block_design.html</code></p>
+      <p>
+        這是 Phase11.1 的外層入口頁。詳細紀錄放在
+        <a href="phase11/phase11_1_dma_block_design.html">phase11/phase11_1_dma_block_design.html</a>。
+      </p>
+    </header>
+
+    <section>
+      <h2>目前狀態摘要</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>項目</th>
+            <th>狀態</th>
+            <th>說明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Validate Design</td>
+            <td>PASS</td>
+            <td>Block Design 連線與 address assignment 通過。</td>
+          </tr>
+          <tr>
+            <td>Synthesis</td>
+            <td>PASS</td>
+            <td><code>synth_design Complete!</code></td>
+          </tr>
+          <tr>
+            <td>Run Implementation</td>
+            <td>PASS</td>
+            <td>route 完成，沒有 routing error。</td>
+          </tr>
+          <tr>
+            <td>Generate Bitstream</td>
+            <td>PASS</td>
+            <td><code>sr_core_dma_bd_wrapper.bit</code> 已產生。</td>
+          </tr>
+          <tr>
+            <td>Timing</td>
+            <td>FAIL</td>
+            <td>WNS = -25.400 ns，TNS = -5651.934 ns，setup failing endpoints = 434。</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="warning">
+        <p>
+          Bitstream 完成不等於 timing pass。這代表 Vivado 能產出 bitstream，但目前設計不保證能在
+          100 MHz clock 下穩定工作。請先閱讀 timing analysis，再決定降頻或重新 pipeline。
+        </p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

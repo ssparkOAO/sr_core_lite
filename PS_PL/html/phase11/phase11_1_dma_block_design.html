@@ -1,0 +1,266 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase11.1 SR Accelerator IP 封裝與 AXI DMA Block Design</title>
+  <link rel="stylesheet" href="../../../html/style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>Phase11 links:</span>
+      <a href="../index.html">PS_PL index</a>
+      <a href="../phase11_1_dma_block_design.html">Phase11.1 summary</a>
+      <a href="phase11_1_timing_analysis.html">Timing analysis</a>
+      <a href="phase11_1_project_sources.html">Source / IP / COE 清單</a>
+      <a href="wrapper_architecture_comparison.html">Wrapper 架構比較</a>
+    </nav>
+
+    <header>
+      <h1>Phase11.1 SR Accelerator IP 封裝與 AXI DMA Block Design</h1>
+      <p class="small">位置：<code>model_lite/sr_core/PS_PL/html/phase11/phase11_1_dma_block_design.html</code></p>
+      <p>
+        Phase11.1 開始進入 PS/PL system integration。本階段把 Phase10 已驗證的
+        AXI4-Stream wrapper 包成 Vivado IP，並在 PYNQ-Z2 Block Design 中接上
+        ZYNQ PS、AXI DMA、SmartConnect 與 reset logic。
+      </p>
+    </header>
+
+    <section>
+      <h2>1. 本階段目標</h2>
+      <p>
+        將 <code>sr_core_axis_wrapper</code> 包裝成適合 AXI DMA 使用的 AXI4-Stream IP。
+        Block Design 的資料流為：
+      </p>
+      <pre><code>PS DDR input buffer
+-> AXI DMA MM2S
+-> AXI4-Stream
+-> SR Accelerator IP
+-> AXI4-Stream
+-> AXI DMA S2MM
+-> PS DDR output buffer</code></pre>
+      <div class="decision">
+        <p>
+          Phase11.1 不做 Python runtime、不做 AXI-Lite control/status、不做 HDMI/camera。
+          本階段只確認 IP packaging、BD 連線、validate、synthesis、implementation 與 bitstream 狀態。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. Frozen Core 邊界</h2>
+      <p>
+        Phase9.6 clean-stream SR core 是 frozen baseline。Phase11.1 不修改 Conv1、Conv3、
+        PixelShuffle、OutputStage 或 clean-stream datapath，只新增外層 IP shell。
+      </p>
+      <pre><code>sr_accel_axis_ip_top
+-> sr_core_axis_wrapper
+-> sr_top_clean_stream_img
+-> Conv1 / Conv3 / PixelShuffle / OutputStage
+-> output_image_ram</code></pre>
+      <p>
+        <code>sr_accel_axis_ip_top</code> 的任務是提供 Vivado IP Packager 容易辨識的
+        <code>aclk</code>、<code>aresetn</code>、S_AXIS、M_AXIS 與 <code>tkeep</code>。
+        內部把 active-low <code>aresetn</code> 轉成 wrapper 使用的 active-high <code>rst</code>。
+      </p>
+    </section>
+
+    <section>
+      <h2>3. AXI4-Stream 介面</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>介面</th>
+            <th>Port</th>
+            <th>說明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>S_AXIS</td>
+            <td><code>s_axis_tdata[7:0]</code>, <code>s_axis_tkeep[0:0]</code>, <code>s_axis_tvalid</code>, <code>s_axis_tready</code>, <code>s_axis_tlast</code></td>
+            <td>AXI DMA MM2S 輸入 stream。每一拍是一個 8-bit pixel。</td>
+          </tr>
+          <tr>
+            <td>M_AXIS</td>
+            <td><code>m_axis_tdata[7:0]</code>, <code>m_axis_tkeep[0:0]</code>, <code>m_axis_tvalid</code>, <code>m_axis_tready</code>, <code>m_axis_tlast</code></td>
+            <td>輸出 stream 送往 AXI DMA S2MM。<code>m_axis_tkeep</code> 固定為 1。</td>
+          </tr>
+          <tr>
+            <td>Clock</td>
+            <td><code>aclk</code></td>
+            <td>S_AXIS 與 M_AXIS 的 associated clock。</td>
+          </tr>
+          <tr>
+            <td>Reset</td>
+            <td><code>aresetn</code></td>
+            <td>Block Design active-low reset。內部使用 <code>rst = ~aresetn</code>。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>4. Block Design 架構</h2>
+      <pre><code>ZYNQ PS
+  | M_AXI_GP0
+  v
+AXI DMA control interface
+
+ZYNQ PS DDR / HP0
+  ^
+  |
+SmartConnect
+  ^
+  |
+AXI DMA memory mapped ports
+
+AXI DMA MM2S -> SR Accelerator S_AXIS
+SR Accelerator M_AXIS -> AXI DMA S2MM</code></pre>
+      <p>
+        AXI DMA 的 MM2S 負責從 PS DDR 讀 input buffer 並轉成 stream。S2MM 負責把
+        SR accelerator 的 output stream 寫回 PS DDR。DMA 的 memory-mapped data ports
+        透過 <code>smartconnect_mem</code> 接到 ZYNQ PS 的 HP0 port。
+      </p>
+    </section>
+
+    <section>
+      <h2>5. Vivado GUI 與 Tcl 對應</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>GUI 步驟</th>
+            <th>選擇值</th>
+            <th>原因</th>
+            <th>Tcl</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Create Project</td>
+            <td><code>sr_core_phase11_dma_pynqz2</code>, part <code>xc7z020clg400-1</code></td>
+            <td>PYNQ-Z2 使用 Zynq-7020。</td>
+            <td><code>create_project</code></td>
+          </tr>
+          <tr>
+            <td>Package IP</td>
+            <td><code>sr_accel_axis_ip_top</code></td>
+            <td>用乾淨 AXIS shell 包住已驗證 wrapper。</td>
+            <td><code>ipx::package_project</code></td>
+          </tr>
+          <tr>
+            <td>Create Block Design</td>
+            <td>ZYNQ7 PS、AXI DMA、SmartConnect、Processor System Reset、SR IP</td>
+            <td>建立最小 DMA-based PS/PL data path。</td>
+            <td><code>create_bd_cell</code></td>
+          </tr>
+          <tr>
+            <td>Connect AXIS</td>
+            <td>MM2S -> SR S_AXIS；SR M_AXIS -> S2MM</td>
+            <td>形成 stream input/output。</td>
+            <td><code>connect_bd_intf_net</code></td>
+          </tr>
+          <tr>
+            <td>Connect memory path</td>
+            <td>DMA memory ports -> SmartConnect -> PS HP0</td>
+            <td>讓 DMA 能讀寫 PS DDR。</td>
+            <td><code>connect_bd_intf_net</code></td>
+          </tr>
+          <tr>
+            <td>Validate Design</td>
+            <td>PASS</td>
+            <td>檢查 BD 介面、clock/reset、address map。</td>
+            <td><code>validate_bd_design</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>6. 自動化 Tcl</h2>
+      <p>主要 script：</p>
+      <pre><code>PS_PL/vivado/sr_core_phase11_dma_pynqz2/tcl/run_phase11_1_create_dma_bd.tcl</code></pre>
+      <p>執行方式：</p>
+      <pre><code>C:\Xilinx\Vivado\2023.1\bin\vivado.bat -mode batch -source PS_PL\vivado\sr_core_phase11_dma_pynqz2\tcl\run_phase11_1_create_dma_bd.tcl</code></pre>
+    </section>
+
+    <section>
+      <h2>7. 驗證狀態</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>項目</th>
+            <th>狀態</th>
+            <th>說明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Validate Design</td>
+            <td>PASS</td>
+            <td>BD validate 成功。</td>
+          </tr>
+          <tr>
+            <td>Synthesis</td>
+            <td>PASS</td>
+            <td><code>synth_design Complete!</code></td>
+          </tr>
+          <tr>
+            <td>Run Implementation</td>
+            <td>PASS</td>
+            <td>route 完成，routing errors = 0。</td>
+          </tr>
+          <tr>
+            <td>Generate Bitstream</td>
+            <td>PASS</td>
+            <td><code>sr_core_dma_bd_wrapper.bit</code> 已產生。</td>
+          </tr>
+          <tr>
+            <td>Timing at 100 MHz</td>
+            <td>FAIL</td>
+            <td>100 MHz 下 WNS = -25.400 ns。</td>
+          </tr>
+          <tr>
+            <td>Timing at 25 MHz</td>
+            <td>PASS</td>
+            <td>FCLK 改成 25 MHz 後，WNS = +1.384 ns，TNS = 0，failing endpoints = 0。</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="warning">
+        <p>
+          這裡的 PASS 表示 implementation flow 與 bitstream generation 完成。Timing 需要看 clock：
+          100 MHz 未過，25 MHz 已過。Phase11.2 可先以 25 MHz bitstream 做 DMA smoke test。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>8. 結果檔</h2>
+      <pre><code>PS_PL/RTL/phase11_1_dma_block_design/result/phase11_1_dma_block_design_result.txt</code></pre>
+      <pre><code>VALIDATE_PASS
+SYNTH_PASS
+RUN_IMPLEMENTATION_PASS
+GENERATE_BITSTREAM_PASS
+TIMING_FAIL
+WNS = -25.400 ns
+TNS = -5651.934 ns
+
+After lowering PL FCLK to 25 MHz:
+TIMING_PASS
+WNS = +1.384 ns
+TNS = 0.000 ns
+Failing endpoints = 0</code></pre>
+    </section>
+
+    <section>
+      <h2>9. 下一步</h2>
+      <p>
+        下一步可以用 25 MHz bitstream 做 Phase11.2 DMA smoke test，先確認 PS / DMA / SR IP
+        的資料搬運流程。若要正式部署或提升效能，仍需要回到 clean-stream core 做 Conv1 pipeline /
+        DSP pipeline refactor。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

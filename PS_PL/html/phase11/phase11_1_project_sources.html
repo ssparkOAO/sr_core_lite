@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase11.1 專案 Source / IP / COE 使用清單</title>
+  <link rel="stylesheet" href="../../../html/style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>Phase11 links:</span>
+      <a href="../index.html">PS_PL index</a>
+      <a href="../phase11_1_dma_block_design.html">Phase11.1 DMA BD</a>
+      <a href="wrapper_architecture_comparison.html">Wrapper 架構比較</a>
+    </nav>
+
+    <header>
+      <h1>Phase11.1 專案 Source / IP / COE 使用清單</h1>
+      <p class="small">位置：<code>model_lite/sr_core/PS_PL/html/phase11/phase11_1_project_sources.html</code></p>
+      <p>
+        這份文件整理 Phase11.1 Vivado 專案目前實際使用到的 Verilog source、top / submodule
+        關係、Vivado IP、Block Memory Generator ROM/RAM 與 COE 檔案位置。目標是打開
+        Vivado 或交接時，不需要到處翻資料夾也能知道目前系統由哪些檔案組成。
+      </p>
+    </header>
+
+    <section>
+      <h2>1. Vivado 專案與主要 Tcl</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>項目</th>
+            <th>位置</th>
+            <th>用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Vivado project</td>
+            <td><code>model_lite/sr_core/PS_PL/vivado/sr_core_phase11_dma_pynqz2/sr_core_phase11_dma_pynqz2.xpr</code></td>
+            <td>Phase11.1 PS/PL DMA Block Design 專案。</td>
+          </tr>
+          <tr>
+            <td>主要 Tcl</td>
+            <td><code>model_lite/sr_core/PS_PL/vivado/sr_core_phase11_dma_pynqz2/tcl/run_phase11_1_create_dma_bd.tcl</code></td>
+            <td>建立 project、加入 RTL、建立 BMG IP、package SR IP、建立 BD、validate、synthesis。</td>
+          </tr>
+          <tr>
+            <td>結果檔</td>
+            <td><code>model_lite/sr_core/PS_PL/RTL/phase11_1_dma_block_design/result/phase11_1_dma_block_design_result.txt</code></td>
+            <td>記錄 Validate Design 與 Synthesis 結果。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>2. Top 層級關係</h2>
+      <pre><code>Block Design top
+└─ sr_core_dma_bd_wrapper
+   ├─ ZYNQ7 Processing System
+   ├─ AXI DMA
+   ├─ SmartConnect
+   ├─ Processor System Reset
+   └─ sr_accel_axis_ip_top
+      └─ sr_core_axis_wrapper
+         └─ sr_top_clean_stream_img
+            ├─ sr_pctrl
+            ├─ parameter ROM IP
+            │  ├─ conv1_weight_rom
+            │  ├─ conv3_weight_rom
+            │  ├─ conv1_m0_rom
+            │  ├─ conv1_m1_rom
+            │  ├─ conv3_m0_rom
+            │  └─ conv3_m1_rom
+            ├─ sr_ctrl_clean_stream_img
+            ├─ sr_conv1_3x3_cin1_cout8_flat
+            │  ├─ sr_window_3x3_cin1
+            │  ├─ sr_conv3x3_cin1_cout8_mac
+            │  └─ sr_requantize
+            ├─ sr_conv1_to_conv3_stream_slice
+            ├─ sr_conv1x1_cin8_cout4_flat
+            │  ├─ sr_conv1x1_cin8_cout4_mac
+            │  └─ sr_requantize
+            ├─ pixel_shuffle_core
+            ├─ sr_output_pack2x2_uint8
+            │  └─ sr_output_stage
+            └─ output_image_ram</code></pre>
+      <div class="decision">
+        <p>
+          注意：Vivado synthesis top 是 BD wrapper；SR accelerator custom IP 的 top 是
+          <code>sr_accel_axis_ip_top</code>；真正的 frozen clean-stream CNN top 是
+          <code>sr_top_clean_stream_img</code>。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>3. Phase11 專用 Verilog</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Module</th>
+            <th>檔案位置</th>
+            <th>用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>sr_accel_axis_ip_top</code></td>
+            <td><code>model_lite/sr_core/PS_PL/RTL/phase11_1_dma_block_design/rtl/sr_accel_axis_ip_top.v</code></td>
+            <td>Vivado IP packaging shell。對外提供 <code>aclk</code>、<code>aresetn</code>、S_AXIS、M_AXIS 與 <code>tkeep</code>。</td>
+          </tr>
+          <tr>
+            <td><code>sr_core_axis_wrapper</code></td>
+            <td><code>model_lite/sr_core/PS_PL/RTL/phase10_ps_dma_wrapper/rtl/sr_core_axis_wrapper.v</code></td>
+            <td>Phase10 已驗證 AXI4-Stream frame wrapper。收完整 input frame 後啟動 core，core done 後輸出完整 frame。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>4. Frozen Clean-Stream Snapshot Verilog</h2>
+      <p>
+        Phase11.1 不直接改 frozen source，而是引用 PS_PL clean-stream Vivado snapshot：
+        <code>model_lite/sr_core/PS_PL/vivado/sr_core_clean_stream_pynqz2/src/rtl/</code>。
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>Module / File</th>
+            <th>用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>sr_top_clean_stream_img.v</code></td>
+            <td>Clean-stream SR core top。整合 parameter preload、Conv1、Conv3、PixelShuffle、OutputStage、output RAM。</td>
+          </tr>
+          <tr>
+            <td><code>sr_ctrl_clean_stream_img.v</code></td>
+            <td>Clean-stream controller。控制 input stream、core run、PixelShuffle / output RAM 流程。</td>
+          </tr>
+          <tr>
+            <td><code>sr_pctrl.v</code></td>
+            <td>Parameter preload controller。從 ROM 讀取 weight / M0 / M1，整理成 flat parameter bank。</td>
+          </tr>
+          <tr>
+            <td><code>sr_conv1_3x3_cin1_cout8_flat.v</code></td>
+            <td>Conv1 full block。3x3 window + Cin=1/Cout=8 MAC + requant，使用 flat parameter bus。</td>
+          </tr>
+          <tr>
+            <td><code>sr_window_3x3_cin1.v</code></td>
+            <td>Conv1 3x3 sliding window，padding 使用 input zero point。</td>
+          </tr>
+          <tr>
+            <td><code>sr_conv3x3_cin1_cout8_mac.v</code></td>
+            <td>Conv1 3x3 signed int8 MAC，輸出 int32 accumulator。</td>
+          </tr>
+          <tr>
+            <td><code>sr_conv1_to_conv3_stream_slice.v</code></td>
+            <td>Conv1 -> Conv3 streaming register slice。移除 feature_mem0 後負責 valid/data 對齊。</td>
+          </tr>
+          <tr>
+            <td><code>sr_conv1x1_cin8_cout4_flat.v</code></td>
+            <td>Conv3 full block。1x1 Cin=8/Cout=4 MAC + requant，使用 flat parameter bus。</td>
+          </tr>
+          <tr>
+            <td><code>sr_conv1x1_cin8_cout4_mac.v</code></td>
+            <td>Conv3 1x1 signed int8 MAC，輸出 4 個 int32 accumulator。</td>
+          </tr>
+          <tr>
+            <td><code>sr_requantize.v</code></td>
+            <td>TFLite-style fixed-point requantization，共用於 Conv1 與 Conv3。</td>
+          </tr>
+          <tr>
+            <td><code>pixel_shuffle_core.v</code></td>
+            <td>PixelShuffle x2 write transaction generator。產生 2x2 HR block 的 packed write。</td>
+          </tr>
+          <tr>
+            <td><code>sr_output_pack2x2_uint8.v</code></td>
+            <td>把 PixelShuffle 產生的 2x2 signed int8 block 轉成 uint8 並打包給 output RAM。</td>
+          </tr>
+          <tr>
+            <td><code>sr_output_stage.v</code></td>
+            <td>Final output stage。signed int8 clip 後做 <code>+128</code> 轉 uint8。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>5. Vivado Block Design IP</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>IP</th>
+            <th>Vivado cell / module</th>
+            <th>用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ZYNQ7 Processing System</td>
+            <td><code>zynq_ps</code></td>
+            <td>PS 端，提供 DDR、GP master、HP0 slave、FCLK clock/reset。</td>
+          </tr>
+          <tr>
+            <td>AXI DMA</td>
+            <td><code>axi_dma_0</code></td>
+            <td>MM2S 將 PS DDR input buffer 轉成 AXI4-Stream；S2MM 將 SR output stream 寫回 PS DDR。</td>
+          </tr>
+          <tr>
+            <td>SmartConnect</td>
+            <td><code>smartconnect_mem</code></td>
+            <td>連接 AXI DMA 的 memory-mapped data ports 到 ZYNQ PS HP0。</td>
+          </tr>
+          <tr>
+            <td>Processor System Reset</td>
+            <td><code>rst_ps7_0_100M</code></td>
+            <td>產生 peripheral reset / aresetn，提供 DMA 與 SR IP reset。</td>
+          </tr>
+          <tr>
+            <td>SR Accelerator custom IP</td>
+            <td><code>sr_accel_axis_0</code></td>
+            <td>由 <code>sr_accel_axis_ip_top</code> package 出來的自訂 AXI4-Stream IP。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>6. BMG ROM / RAM IP 與 COE 對應</h2>
+      <p>
+        Phase11.1 Tcl 會在 project 內重新建立 BMG IP，不直接搬移舊 project 的 XCI，
+        因為舊 XCI 的相對 COE 路徑容易失效。
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>IP module</th>
+            <th>型態</th>
+            <th>Width / Depth</th>
+            <th>COE</th>
+            <th>用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>conv1_weight_rom</code></td>
+            <td>Single Port ROM</td>
+            <td>8-bit / 72</td>
+            <td><code>model_lite/sr_core/generated_vivado_hex/conv1_weight.coe</code></td>
+            <td>Conv1 3x3 Cout=8 weights。</td>
+          </tr>
+          <tr>
+            <td><code>conv3_weight_rom</code></td>
+            <td>Single Port ROM</td>
+            <td>8-bit / 32</td>
+            <td><code>model_lite/sr_core/generated_vivado_hex/conv3_weight.coe</code></td>
+            <td>Conv3 1x1 Cin=8/Cout=4 weights。</td>
+          </tr>
+          <tr>
+            <td><code>conv1_m0_rom</code></td>
+            <td>Single Port ROM</td>
+            <td>32-bit / 8</td>
+            <td><code>model_lite/sr_core/generated_vivado_hex/conv1_m0.coe</code></td>
+            <td>Conv1 per-channel M0。</td>
+          </tr>
+          <tr>
+            <td><code>conv1_m1_rom</code></td>
+            <td>Single Port ROM</td>
+            <td>64-bit / 8</td>
+            <td><code>model_lite/sr_core/generated_vivado_hex/conv1_m1.coe</code></td>
+            <td>Conv1 per-channel M1。</td>
+          </tr>
+          <tr>
+            <td><code>conv3_m0_rom</code></td>
+            <td>Single Port ROM</td>
+            <td>32-bit / 4</td>
+            <td><code>model_lite/sr_core/generated_vivado_hex/conv3_m0.coe</code></td>
+            <td>Conv3 per-channel M0。</td>
+          </tr>
+          <tr>
+            <td><code>conv3_m1_rom</code></td>
+            <td>Single Port ROM</td>
+            <td>64-bit / 4</td>
+            <td><code>model_lite/sr_core/generated_vivado_hex/conv3_m1.coe</code></td>
+            <td>Conv3 per-channel M1。</td>
+          </tr>
+          <tr>
+            <td><code>output_image_ram</code></td>
+            <td>True Dual Port RAM</td>
+            <td>16-bit / 32768</td>
+            <td>無，runtime 寫入</td>
+            <td>Clean-stream core 內部 output image RAM，儲存 256x256 uint8 output 的 packed 16-bit 資料。</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        Vivado 產生的 XCI 會位於：
+        <code>model_lite/sr_core/PS_PL/vivado/sr_core_phase11_dma_pynqz2/sr_core_phase11_dma_pynqz2.srcs/sources_1/ip/</code>。
+      </p>
+    </section>
+
+    <section>
+      <h2>7. COE 資料來源</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>COE 檔</th>
+            <th>來源概念</th>
+            <th>是否目前使用</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>conv1_weight.coe</code></td>
+            <td>由 <code>generated/conv1_weight.mem</code> 轉成 Vivado hex COE。</td>
+            <td>是</td>
+          </tr>
+          <tr>
+            <td><code>conv3_weight.coe</code></td>
+            <td>由 <code>generated/conv3_weight.mem</code> 轉成 Vivado hex COE。</td>
+            <td>是</td>
+          </tr>
+          <tr>
+            <td><code>conv1_m0.coe</code>, <code>conv1_m1.coe</code></td>
+            <td>Conv1 requant parameters。</td>
+            <td>是</td>
+          </tr>
+          <tr>
+            <td><code>conv3_m0.coe</code>, <code>conv3_m1.coe</code></td>
+            <td>Conv3 requant parameters。</td>
+            <td>是</td>
+          </tr>
+          <tr>
+            <td><code>conv1_bias.coe</code>, <code>conv3_bias.coe</code></td>
+            <td>Bias COE，目前 Phase11.1 wrapper 沒有獨立使用 bias ROM。</td>
+            <td>否</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>8. 目前不在 Phase11.1 使用的東西</h2>
+      <ul>
+        <li><code>RTL_sys/phase9_6_clean_stream/</code>：歷史/frozen source，不在 Phase11.1 直接引用。</li>
+        <li><code>vivado/sr_core_clean_stream_pynqz2/</code> 舊 project：是 Phase9.6 baseline，不是 Phase11.1 BD project。</li>
+        <li>Phase11.1 不使用 <code>conv3_feature_ram</code>；clean-stream 架構已移除該中間 RAM。</li>
+        <li>Phase11.1 尚未使用 AXI-Lite status/control register；目前只透過 DMA stream 搬 input/output frame。</li>
+        <li>Phase11.1 尚未執行 PYNQ Python runtime 或 board DMA smoke test。</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2>9. 快速定位規則</h2>
+      <div class="decision">
+        <p>
+          想看 PS/PL BD 怎麼建立，看 Phase11.1 Tcl；想看 custom IP 外殼，看
+          <code>sr_accel_axis_ip_top.v</code>；想看 AXIS frame 行為，看
+          <code>sr_core_axis_wrapper.v</code>；想看 CNN datapath，看 clean-stream snapshot
+          的 <code>src/rtl</code>。
+        </p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

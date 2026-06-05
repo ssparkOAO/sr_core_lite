@@ -1,0 +1,22 @@
+Phase10.1 AXI-Stream wrapper TB
+Input  : butterflyx2_Y.txt, TB quantize uint8 - 128
+Golden : sr_output_uint8_clean_stream.txt
+Output : sr_output_uint8_axis_wrapper.txt
+
+preload_done = 1
+core_done = 1
+wrapper error = 0
+input count = 16384
+output count = 65536
+sent count = 16384
+recv count = 65536
+input tlast index = 16383
+output tlast index = 65535
+mismatch count = 0
+max abs diff = 0
+
+input handshake pass = 1
+core done pass = 1
+output handshake pass = 1
+value compare pass = 1
+PASS

@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase11 Wrapper 架構比較：控制型 IP 與 DMA Streaming IP</title>
+  <link rel="stylesheet" href="../../../html/style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>Phase11 links:</span>
+      <a href="../index.html">PS_PL index</a>
+      <a href="../phase11_1_dma_block_design.html">Phase11.1 DMA BD</a>
+    </nav>
+
+    <header>
+      <h1>Phase11 Wrapper 架構比較：控制型 IP 與 DMA Streaming IP</h1>
+      <p class="small">位置：<code>model_lite/sr_core/PS_PL/html/phase11/wrapper_architecture_comparison.html</code></p>
+      <p>
+        這篇記錄為什麼 <code>ref/cnn_classfication</code> 的專案看起來是
+        <code>myip_v1_0</code> 控制 <code>NN_1</code>，而目前 SR accelerator 則是把
+        <code>sr_core_axis_wrapper</code> 外面再包成 <code>sr_accel_axis_ip_top</code>，
+        並接到 AXI DMA。
+      </p>
+    </header>
+
+    <section>
+      <h2>1. 問題背景</h2>
+      <p>
+        參考專案 <code>ref/cnn_classfication</code> 的 Block Design 裡，可以看到
+        <code>myip_v1_0</code> 和 <code>NN_1</code> 是分開的。<code>myip_v1_0</code>
+        連到 PS/AXI，並控制 <code>NN_1</code> 的 start、RAM address、RAM enable、
+        write enable 與 output result。
+      </p>
+      <p>
+        這會讓人疑惑：為什麼它不是直接把 CNN core 包成 AXI？為什麼還需要另外一個 IP
+        去控制 CNN 電路？
+      </p>
+    </section>
+
+    <section>
+      <h2>2. ref 專案的架構：控制型 Wrapper</h2>
+      <pre><code>PS / AXI control
+        |
+        v
+myip_v1_0
+        |
+        +-> start_flag / end_flag
+        +-> RAM address / RAM enable / RAM write enable
+        +-> result readback
+        |
+        v
+NN_1 CNN datapath</code></pre>
+      <p>
+        <code>NN_1</code> 本身不是 AXI IP。它比較像一顆裸 CNN core，對外露出的訊號是
+        <code>start_flag</code>、<code>end_flag</code>、RAM address、RAM data、
+        RAM enable、RAM write enable 等硬體控制訊號。
+      </p>
+      <p>
+        因此 <code>myip_v1_0</code> 的角色是把 PS 端看得懂的 AXI control 轉成
+        <code>NN_1</code> 需要的本地控制訊號。它不是 CNN arithmetic 本身，而是
+        「PS/AXI 控制外殼」。
+      </p>
+    </section>
+
+    <section>
+      <h2>3. 目前 SR 專案的架構：DMA Streaming Wrapper</h2>
+      <pre><code>PS DDR input buffer
+        |
+        v
+AXI DMA MM2S
+        |
+        v
+sr_accel_axis_ip_top
+        |
+        v
+sr_core_axis_wrapper
+        |
+        v
+Frozen SR Core
+        |
+        v
+AXI DMA S2MM
+        |
+        v
+PS DDR output buffer</code></pre>
+      <p>
+        SR accelerator 的輸入與輸出都是影像資料，資料量遠比分類結果大。若用 AXI-Lite
+        register 一筆一筆搬 pixel，會非常沒效率。因此目前選擇 AXI DMA + AXI4-Stream：
+        PS 端把 input buffer 放在 DDR，DMA 以 stream 形式送入 PL；SR core 完成後，
+        output stream 再由 DMA 寫回 DDR。
+      </p>
+      <p>
+        <code>sr_accel_axis_ip_top</code> 是給 Vivado IP Packager 和 AXI DMA 看的乾淨外殼。
+        它把外部介面整理成標準的 <code>S_AXIS</code> / <code>M_AXIS</code>、<code>aclk</code>、
+        <code>aresetn</code>，內部再接到已驗證通過的 <code>sr_core_axis_wrapper</code>。
+      </p>
+    </section>
+
+    <section>
+      <h2>4. 兩種 Wrapper 的差異</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>項目</th>
+            <th>ref/cnn_classfication</th>
+            <th>目前 SR accelerator</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>外層 IP</td>
+            <td><code>myip_v1_0</code></td>
+            <td><code>sr_accel_axis_ip_top</code></td>
+          </tr>
+          <tr>
+            <td>內部 CNN core</td>
+            <td><code>NN_1</code></td>
+            <td><code>sr_core_axis_wrapper</code> + frozen SR core</td>
+          </tr>
+          <tr>
+            <td>PS 溝通方式</td>
+            <td>AXI-Lite / AXI control register</td>
+            <td>AXI DMA stream</td>
+          </tr>
+          <tr>
+            <td>主要資料搬運</td>
+            <td>外層 IP 控 RAM / start / result</td>
+            <td>DMA MM2S 輸入，DMA S2MM 輸出</td>
+          </tr>
+          <tr>
+            <td>適合任務</td>
+            <td>分類結果少、控制訊號多</td>
+            <td>影像輸入輸出大、pixel stream 多</td>
+          </tr>
+          <tr>
+            <td>設計重點</td>
+            <td>讓 PS 控制 CNN core 與 RAM</td>
+            <td>讓 DMA 高效率搬整張影像</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>5. 為什麼不是直接把 Frozen Core 包成 AXI？</h2>
+      <p>
+        Frozen SR core 是已驗證的 compute datapath。它的目標是維持功能正確，不要在系統整合時
+        反覆修改。若直接把 AXI protocol 寫進 frozen core，會把 CNN arithmetic、stream protocol、
+        DMA timing、reset、packaging 規則混在一起，debug 會變困難。
+      </p>
+      <div class="decision">
+        <p>
+          因此目前採用分層：Frozen core 負責 SR 計算；<code>sr_core_axis_wrapper</code>
+          負責 AXI stream frame 行為；<code>sr_accel_axis_ip_top</code> 負責 Vivado IP
+          packaging 友善介面。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>6. 這和 ref 專案其實是同一種思想</h2>
+      <p>
+        表面上看，ref 是 <code>myip_v1_0</code> 控 <code>NN_1</code>，目前 SR 是
+        <code>sr_accel_axis_ip_top</code> 包 <code>sr_core_axis_wrapper</code>。
+        但本質一樣：都沒有把 CNN datapath 直接暴露給 PS，而是在 CNN core 外面加一層
+        system-facing wrapper。
+      </p>
+      <pre><code>ref:
+PS-friendly control IP
+-> CNN core
+
+SR:
+DMA-friendly streaming IP
+-> SR core</code></pre>
+      <p>
+        差異只在於資料搬運方式。分類專案 output 很少，所以 control/register-centric 架構合理；
+        SR 專案要搬 128x128 input 與 256x256 output，所以 DMA streaming 架構更合理。
+      </p>
+    </section>
+
+    <section>
+      <h2>7. 目前結論</h2>
+      <p>
+        <code>sr_accel_axis_ip_top</code> 不是多餘的一層。它讓 Vivado IP Packager 看到乾淨的
+        AXI4-Stream 介面，也保護已驗證的 SR core 不被 PS/PL integration 細節污染。
+      </p>
+      <p>
+        未來若要加入 AXI-Lite control/status，例如 start、done、error、image size、interrupt，
+        可以再新增一層 control wrapper，概念就會更接近 ref 的 <code>myip_v1_0</code>。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

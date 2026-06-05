@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase10.1 AXI-Stream Wrapper Debug and Verification</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>相關目錄：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase9_6_clean_streaming_architecture.html">Phase9.6 Clean Stream</a>
+      <a href="phase10_vivado_gui_ps_dma.html">Phase10 GUI</a>
+    </nav>
+
+    <header>
+      <h1>Phase10.1 AXI-Stream Wrapper Debug and Verification</h1>
+      <p class="small">文件位置：<code>model_lite/sr_core/html/phase10_ps_dma_wrapper_plan.html</code></p>
+      <p class="small">RTL 位置：<code>model_lite/sr_core/RTL_sys/phase10_ps_dma_wrapper/</code></p>
+      <p>
+        本階段目標是把 Phase9.6 clean-stream SR core 包成 AXI-Stream style wrapper，
+        並確認 wrapper control、input handshake、output handshake、value compare 都正確。
+      </p>
+    </header>
+
+    <section>
+      <h2>1. 先固定 Phase9.6 Baseline</h2>
+      <p>
+        這次 debug 的第一步不是修改 CNN datapath，而是先確認 Phase9.6 clean-stream baseline 是否可信。
+        原因是本地曾出現一個 stale result txt 顯示 FAIL，但 Vivado clean-stream project 的最新
+        <code>simulate.log</code> 顯示 PASS，而且 clean-stream output 與 Phase9.5 reference hash 完全相同。
+      </p>
+      <div class="decision">
+        <p>
+          結論：Phase9.6 clean-stream core 目前視為 golden wrapper reference。
+          不應再用 stale 的 <code>tb_sr_top_clean_stream_img_result.txt</code> 判斷 CNN arithmetic 是否壞掉。
+        </p>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>檢查項目</th>
+            <th>結果</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Phase9.6 Vivado simulate.log</td>
+            <td><code>mismatch count = 0</code>、<code>max abs diff = 0</code>、<code>PASS</code></td>
+          </tr>
+          <tr>
+            <td>Clean-stream txt vs Phase9.5 txt</td>
+            <td><code>sr_output_uint8_clean_stream.txt</code> 與 <code>sr_output_uint8.txt</code> hash 相同</td>
+          </tr>
+          <tr>
+            <td>修正動作</td>
+            <td>將 Phase9.6 stale result txt 更新為最新 PASS 狀態</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>2. 真正 Root Cause</h2>
+      <p>
+        問題不是 Conv1、Conv3、PixelShuffle 或 OutputStage 的 arithmetic 先壞掉。
+        這次主要混在一起的問題有兩個：
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>問題</th>
+            <th>影響</th>
+            <th>修正方式</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>stale / 被覆寫的 Phase9.6 result txt</td>
+            <td>看起來像 clean-stream core FAIL，但實際最新 Vivado log 是 PASS。</td>
+            <td>以最新可信 replay 與 output hash 作為 baseline。</td>
+          </tr>
+          <tr>
+            <td>手動 xsim flow 使用 <code>*_sim_netlist.v</code></td>
+            <td>容易和 Phase9.6 PASS flow 使用的 BMG behavioral wrapper 不一致，造成假 mismatch。</td>
+            <td>Phase10 wrapper sim 改用 Vivado IP 的 behavioral simulation wrapper。</td>
+          </tr>
+          <tr>
+            <td>wrapper sequencing 不夠清楚</td>
+            <td>可能在 core 尚未 ready 時打開 <code>s_axis_tready</code>，造成 timeout 或 input/control 不同步。</td>
+            <td>加入 <code>WAIT_CORE_READY</code> 狀態，input handshake 只在 core ready 後發生。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>3. Wrapper FSM</h2>
+      <p>
+        Phase10 wrapper 現在使用明確分段的 control flow。這樣 debug 時可以先看 control 是否完整，
+        再看 value compare，而不是把 timeout 和數值 mismatch 混在一起。
+      </p>
+      <pre><code>PRELOAD
+  -> START_CORE
+  -> WAIT_CORE_READY
+  -> STREAM_INPUT
+  -> WAIT_CORE_DONE
+  -> READ_OUTPUT
+  -> SEND_AXIS
+  -> DONE</code></pre>
+      <table>
+        <thead>
+          <tr>
+            <th>狀態</th>
+            <th>責任</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><code>PRELOAD</code></td><td>等待 Phase9.6 core 內部 parameter ROM preload 完成。</td></tr>
+          <tr><td><code>START_CORE</code></td><td>送出 one-cycle core start pulse。</td></tr>
+          <tr><td><code>WAIT_CORE_READY</code></td><td>等待 clean-stream core 的 input side ready。</td></tr>
+          <tr><td><code>STREAM_INPUT</code></td><td>接收 16384 筆 LR uint8 input，wrapper 內部轉成 signed int8。</td></tr>
+          <tr><td><code>WAIT_CORE_DONE</code></td><td>等待完整 Conv1、Conv3、PixelShuffle、OutputStage 完成。</td></tr>
+          <tr><td><code>READ_OUTPUT</code></td><td>透過正式 output RAM readout port 讀回 256x256 uint8 output。</td></tr>
+          <tr><td><code>SEND_AXIS</code></td><td>輸出 65536 筆 M_AXIS uint8 pixel，最後一筆拉高 <code>m_axis_tlast</code>。</td></tr>
+          <tr><td><code>DONE</code></td><td>拉高 wrapper done，結束測試。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>4. Simulation Model 規則</h2>
+      <p>
+        Phase10 wrapper verification 必須使用和 Phase9.6 PASS flow 一致的 Vivado BMG behavioral simulation wrapper。
+        不建議在這個層級直接改用 <code>*_sim_netlist.v</code> 當作主要判斷來源，因為那會把 IP model 差異與 wrapper control debug 混在一起。
+      </p>
+      <pre><code>Use:
+  vivado/sr_core_clean_stream_pynqz2/.../ip/*/sim/*.v
+  one blk_mem_gen_v8_4.v behavioral model
+
+Avoid for this verification:
+  *_sim_netlist.v as the primary source</code></pre>
+      <p>
+        新增的 helper script 位置：
+      </p>
+      <pre><code>RTL_sys/phase10_ps_dma_wrapper/sim/run_phase10_axis_wrapper_sim.ps1</code></pre>
+      <p>
+        執行方式：
+      </p>
+      <pre><code>powershell -ExecutionPolicy Bypass -File .\run_phase10_axis_wrapper_sim.ps1</code></pre>
+    </section>
+
+    <section>
+      <h2>5. Testbench 判斷方式</h2>
+      <p>
+        TB 不再只輸出一個 mismatch count。現在會把 verification 拆成四層，方便定位錯誤屬於 control、handshake，還是真正數值 mismatch。
+      </p>
+      <table>
+        <thead>
+          <tr>
+            <th>檢查層</th>
+            <th>PASS 條件</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Input handshake</td>
+            <td><code>input count = 16384</code>，<code>input tlast index = 16383</code></td>
+          </tr>
+          <tr>
+            <td>Core done</td>
+            <td><code>core_done = 1</code>，<code>wrapper error = 0</code></td>
+          </tr>
+          <tr>
+            <td>Output handshake</td>
+            <td><code>output count = 65536</code>，<code>output tlast index = 65535</code></td>
+          </tr>
+          <tr>
+            <td>Value compare</td>
+            <td><code>mismatch count = 0</code>，<code>max abs diff = 0</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>6. Verification Result</h2>
+      <p>
+        最新 Phase10 wrapper simulation 已通過。結果檔：
+      </p>
+      <pre><code>RTL_sys/phase10_ps_dma_wrapper/results/tb_sr_core_axis_wrapper_result.txt</code></pre>
+      <pre><code>preload_done = 1
+core_done = 1
+wrapper error = 0
+input count = 16384
+output count = 65536
+sent count = 16384
+recv count = 65536
+input tlast index = 16383
+output tlast index = 65535
+mismatch count = 0
+max abs diff = 0
+
+input handshake pass = 1
+core done pass = 1
+output handshake pass = 1
+value compare pass = 1
+PASS</code></pre>
+      <p>
+        另外，以下三個 output txt 的 SHA256 hash 相同：
+      </p>
+      <pre><code>pic/test_pic/result/sr_output_uint8_axis_wrapper.txt
+pic/test_pic/result/sr_output_uint8_clean_stream.txt
+pic/test_pic/result/sr_output_uint8.txt</code></pre>
+      <div class="decision">
+        <p>
+          結論：Phase10 AXI-Stream wrapper 目前已和 Phase9.6 clean-stream baseline bit-exact。
+          這次問題的主要根因是 stale result / simulation model / wrapper timeout 混在一起，不是 CNN arithmetic 本身壞掉。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>7. 下一步</h2>
+      <p>
+        Phase10.1 已證明 AXI-Stream shell 可以正確接住 Phase9.6 clean-stream SR core。
+        下一步可以開始整理更完整的 Vivado block design / AXI DMA / PS-PL integration，但仍應保留目前這個 wrapper simulation 作為 regression checkpoint。
+      </p>
+      <ul>
+        <li>保留 Phase9.6 clean-stream project 作為 PL-side CNN/RAM golden baseline。</li>
+        <li>保留 Phase10 wrapper sim 作為 AXIS wrapper regression。</li>
+        <li>若 Vivado batch 顯示 project read-only，先關閉 Vivado GUI，再重新跑 Tcl。</li>
+        <li>後續若切到 block design，仍要先比對 txt equivalence，再進一步做 image/PSNR 評估。</li>
+      </ul>
+    </section>
+  </main>
+</body>
+</html>

@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase11.1 Timing Analysis</title>
+  <link rel="stylesheet" href="../../../html/style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>Phase11 links:</span>
+      <a href="../index.html">PS_PL index</a>
+      <a href="../phase11_1_dma_block_design.html">Phase11.1 DMA BD</a>
+      <a href="phase11_1_project_sources.html">Source / IP / COE 清單</a>
+    </nav>
+
+    <header>
+      <h1>Phase11.1 Timing Analysis</h1>
+      <p class="small">位置：<code>model_lite/sr_core/PS_PL/html/phase11/phase11_1_timing_analysis.html</code></p>
+      <p>
+        本頁記錄 Phase11.1 在產生 bitstream 後的 timing 狀態。原本 100 MHz 時
+        implementation 與 bitstream 都完成，但 setup timing 沒有收斂。後來將
+        ZYNQ PS 的 PL FCLK 降到 25 MHz 後，timing 已經通過。
+      </p>
+    </header>
+
+    <section>
+      <h2>1. Implementation / Bitstream 狀態</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>項目</th>
+            <th>狀態</th>
+            <th>依據</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Route</td>
+            <td>PASS</td>
+            <td><code>sr_core_dma_bd_wrapper_route_status.rpt</code> 顯示 routable nets 全部 routed，routing errors = 0。</td>
+          </tr>
+          <tr>
+            <td>Run Implementation</td>
+            <td>PASS</td>
+            <td>Vivado implementation flow 完成至 routed design。</td>
+          </tr>
+          <tr>
+            <td>Generate Bitstream</td>
+            <td>PASS</td>
+            <td><code>sr_core_dma_bd_wrapper.bit</code> 已產生，GUI 顯示 write_bitstream Complete。</td>
+          </tr>
+          <tr>
+            <td>Timing at 100 MHz</td>
+            <td>FAIL</td>
+            <td>Timing summary 顯示 <code>Timing constraints are not met</code>。</td>
+          </tr>
+          <tr>
+            <td>Timing at 25 MHz</td>
+            <td>PASS</td>
+            <td>FCLK period 改為 40 ns 後，setup / hold / pulse width 全部通過。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>2. 100 MHz Timing Summary</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>項目</th>
+            <th>數值</th>
+            <th>說明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Clock</td>
+            <td><code>clk_fpga_0</code></td>
+            <td>ZYNQ PS FCLK，period = 10 ns，也就是 100 MHz。</td>
+          </tr>
+          <tr>
+            <td>WNS</td>
+            <td><code>-25.400 ns</code></td>
+            <td>最差 setup slack。負值代表 timing 未過。</td>
+          </tr>
+          <tr>
+            <td>TNS</td>
+            <td><code>-5651.934 ns</code></td>
+            <td>所有 setup violation 的總和。</td>
+          </tr>
+          <tr>
+            <td>Failing Endpoints</td>
+            <td><code>434</code></td>
+            <td>setup timing 失敗的 endpoint 數量。</td>
+          </tr>
+          <tr>
+            <td>Hold</td>
+            <td><code>PASS</code></td>
+            <td>WHS = 0.019 ns，沒有 hold failing endpoint。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>3. 25 MHz Timing Summary</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>項目</th>
+            <th>數值</th>
+            <th>說明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Clock</td>
+            <td><code>clk_fpga_0</code></td>
+            <td>ZYNQ PS FCLK，period = 40 ns，也就是 25 MHz。</td>
+          </tr>
+          <tr>
+            <td>WNS</td>
+            <td><code>+1.384 ns</code></td>
+            <td>最差 setup slack 為正值，setup timing 通過。</td>
+          </tr>
+          <tr>
+            <td>TNS</td>
+            <td><code>0.000 ns</code></td>
+            <td>沒有 setup violation。</td>
+          </tr>
+          <tr>
+            <td>Failing Endpoints</td>
+            <td><code>0</code></td>
+            <td>setup failing endpoints 為 0。</td>
+          </tr>
+          <tr>
+            <td>Hold</td>
+            <td><code>PASS</code></td>
+            <td>WHS = 0.018 ns，沒有 hold failing endpoint。</td>
+          </tr>
+          <tr>
+            <td>Pulse Width</td>
+            <td><code>PASS</code></td>
+            <td>WPWS = 18.750 ns，沒有 pulse width failing endpoint。</td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="decision">
+        <p>
+          25 MHz timing pass 證明目前主要問題不是 AXI DMA、SmartConnect 或 IP packaging，
+          而是 clean-stream SR core 的 Conv1 datapath 在 100 MHz 下太長。降頻後，每個 cycle
+          有 40 ns，足以容納目前約 35 ns 的 worst path。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>4. 100 MHz Worst Path</h2>
+      <pre><code>Source:
+sr_core_dma_bd_i/sr_accel_axis_0/inst/sr_core_axis_wrapper_u0/core_u0/
+conv1_block/window_u0/win20_reg[1]/C
+
+Destination:
+sr_core_dma_bd_i/sr_accel_axis_0/inst/sr_core_axis_wrapper_u0/core_u0/
+conv1_to_conv3_slice_u0/out_c3_reg[0]/D
+
+Requirement:      10.000 ns
+Data Path Delay:  35.061 ns
+Logic Delay:      20.245 ns
+Route Delay:      14.816 ns
+Logic Levels:     45
+Major resources:  CARRY4=29, DSP48E1=2</code></pre>
+      <p>
+        這條 worst path 從 Conv1 window register 出發，穿過 Conv1 MAC / requant 相關組合邏輯，
+        最後到 Conv1 -> Conv3 streaming slice 的輸出暫存器。也就是說，主要問題不是
+        AXI DMA 或 SmartConnect，而是 SR core 內部 Conv1 datapath 太長。
+      </p>
+    </section>
+
+    <section>
+      <h2>5. 為什麼 100 MHz 會失敗</h2>
+      <p>
+        目前 Phase9.6 clean-stream baseline 是以功能正確與 hierarchy readability 為優先，
+        並沒有為 100 MHz timing closure 做 pipeline。Conv1 3x3 Cout=8 的 MAC、requant、
+        control selection 與 Conv1 -> Conv3 slice 之間形成太長的 combinational path。
+      </p>
+      <div class="warning">
+        <p>
+          目前 100 MHz 給每個 clock cycle 10 ns，但 worst path data delay 約 35 ns。
+          這代表不是簡單加 implementation strategy 就能完全解決，核心 datapath 需要切 pipeline，
+          或先降低 PL clock 作為 bring-up 測試。
+        </p>
+      </div>
+    </section>
+
+    <section>
+      <h2>6. DRC / Methodology 訊息</h2>
+      <ul>
+        <li>Route status：routing errors = 0。</li>
+        <li>DRC 主要 warning 包含 DSP input/output pipeline 建議，例如 DPIP-1、DPOP-1、DPOP-2。</li>
+        <li>Methodology DRC 顯示 TIMING-16 large setup violation，與 timing summary 的 setup failure 一致。</li>
+      </ul>
+      <p>
+        DSP pipeline warning 很重要，因為 Conv1 MAC 使用 DSP48E1，但目前未充分使用 DSP input/output register。
+        這會讓 multiplier / adder tree 更難在 100 MHz 下收斂。
+      </p>
+    </section>
+
+    <section>
+      <h2>7. 下一步建議</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>方案</th>
+            <th>用途</th>
+            <th>優缺點</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>方案 A：先降 FCLK</td>
+            <td>快速確認板上 DMA / Python 流程能不能跑。</td>
+            <td>已驗證 25 MHz timing pass。適合 Phase11.2 先做 DMA smoke test。</td>
+          </tr>
+          <tr>
+            <td>方案 B：Conv1 pipeline</td>
+            <td>在 Conv1 MAC partial sum、requant、Conv1->Conv3 slice 之間切暫存器。</td>
+            <td>正規解法，但要重新做 RTL simulation、AXIS wrapper simulation、Vivado implementation。</td>
+          </tr>
+          <tr>
+            <td>方案 C：使用 DSP pipeline register</td>
+            <td>讓乘法與加法路徑更容易 timing closure。</td>
+            <td>需要調整 MAC RTL 或 inference style，仍需重新驗證 bit-exact 行為。</td>
+          </tr>
+          <tr>
+            <td>方案 D：多 cycle path</td>
+            <td>若架構允許某些計算跨多 cycle，可用約束反映真實 timing。</td>
+            <td>目前 Conv1 -> Conv3 是 streaming valid path，不應直接亂加 multicycle，除非 RTL control 明確支援。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>8. 目前結論</h2>
+      <div class="decision">
+        <p>
+          Phase11.1 可以記錄為：Validate Design PASS、Synthesis PASS、Run Implementation PASS、
+          Generate Bitstream PASS。Timing 狀態要分開看：100 MHz FAIL，25 MHz PASS。
+          目前可用 25 MHz bitstream 進入 Phase11.2 DMA smoke test。
+        </p>
+      </div>
+      <p>
+        若目標是正式可部署 accelerator，後續仍應回到 clean-stream core 做 Conv1 pipeline /
+        DSP pipeline timing refactor，把可用頻率往 100 MHz 拉回來。
+      </p>
+    </section>
+  </main>
+</body>
+</html>

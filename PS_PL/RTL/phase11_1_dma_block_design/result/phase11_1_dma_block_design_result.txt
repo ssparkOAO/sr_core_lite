@@ -1,0 +1,59 @@
+Phase11.1 SR Accelerator IP Packaging + AXI DMA Block Design
+Project: C:/M11413047/codex/final_proj/model_lite/sr_core/PS_PL/vivado/sr_core_phase11_dma_pynqz2
+Result file: C:/M11413047/codex/final_proj/model_lite/sr_core/PS_PL/RTL/phase11_1_dma_block_design/result/phase11_1_dma_block_design_result.txt
+
+Creating Vivado project...
+Board part set to PYNQ-Z2.
+Adding RTL sources...
+Creating fresh BMG IPs in the Phase11.1 project...
+Creating ROM IP conv1_weight_rom from C:/M11413047/codex/final_proj/model_lite/sr_core/generated_vivado_hex/conv1_weight.coe
+Creating ROM IP conv3_weight_rom from C:/M11413047/codex/final_proj/model_lite/sr_core/generated_vivado_hex/conv3_weight.coe
+Creating ROM IP conv1_m0_rom from C:/M11413047/codex/final_proj/model_lite/sr_core/generated_vivado_hex/conv1_m0.coe
+Creating ROM IP conv1_m1_rom from C:/M11413047/codex/final_proj/model_lite/sr_core/generated_vivado_hex/conv1_m1.coe
+Creating ROM IP conv3_m0_rom from C:/M11413047/codex/final_proj/model_lite/sr_core/generated_vivado_hex/conv3_m0.coe
+Creating ROM IP conv3_m1_rom from C:/M11413047/codex/final_proj/model_lite/sr_core/generated_vivado_hex/conv3_m1.coe
+Creating output RAM IP output_image_ram
+Packaging SR accelerator AXIS IP...
+S_AXIS infer warning: 
+M_AXIS infer warning: 
+Creating block design...
+Connecting clocks and resets...
+Connecting AXI streams...
+Running connection automation for AXI memory-mapped ports...
+Connecting DMA memory-mapped data ports to PS HP0 through SmartConnect...
+Assigning addresses...
+Validating block design...
+VALIDATE_PASS
+Creating HDL wrapper...
+Launching synthesis...
+SYNTH_STATUS: synth_design Complete!
+SYNTH_PASS
+
+Implementation / bitstream analysis from current Vivado impl_1:
+RUN_IMPLEMENTATION_PASS
+GENERATE_BITSTREAM_PASS
+ROUTE_STATUS: fully routed, routing errors = 0
+BITSTREAM: sr_core_dma_bd_wrapper.bit generated
+
+Timing summary:
+TIMING_FAIL
+Clock: clk_fpga_0, period = 10.000 ns, frequency = 100 MHz
+WNS = -25.400 ns
+TNS = -5651.934 ns
+Setup failing endpoints = 434
+Worst path source = conv1_block/window_u0/win20_reg[1]
+Worst path destination = conv1_to_conv3_slice_u0/out_c3_reg[0]
+Worst path data delay = 35.061 ns
+Worst path logic levels = 45
+
+After lowering PL FCLK to 25 MHz:
+TIMING_PASS
+Clock: clk_fpga_0, period = 40.000 ns, frequency = 25 MHz
+WNS = +1.384 ns
+TNS = 0.000 ns
+Setup failing endpoints = 0
+WHS = +0.018 ns
+Pulse width slack = +18.750 ns
+All user specified timing constraints are met.
+
+Phase11.1 result: PASS for validate/synthesis/implementation/bitstream generation. Timing FAIL at 100 MHz, Timing PASS at 25 MHz.

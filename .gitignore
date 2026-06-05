@@ -25,6 +25,17 @@ vivado/**/*.hw/
 vivado/**/*.ip_user_files/
 vivado/**/*.runs/
 vivado/**/*.sim/
+**/vivado/**/*.cache/
+**/vivado/**/*.gen/
+**/vivado/**/*.hw/
+**/vivado/**/*.ip_user_files/
+**/vivado/**/*.runs/
+**/vivado/**/*.sim/
+**/.Xil/
+*.dcp
+*.bit
+*.rpx
+*.vdi
 
 # Local runtime dumps and large intermediate arrays
 generated/runtime_dump/

@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>Phase10.6 Vivado GUI PS/PL DMA 教學</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="page">
+    <nav class="quick-links">
+      <span>快速連結：</span>
+      <a href="index.html">SR Core 首頁</a>
+      <a href="RTL_sys_index.html">RTL_sys</a>
+      <a href="phase10_ps_dma_wrapper_plan.html">Phase10 階段任務</a>
+      <a href="phase9_6_clean_streaming_architecture.html">Phase9.6</a>
+    </nav>
+
+    <header>
+      <h1>Phase10.6 Vivado GUI PS/PL DMA 教學</h1>
+      <p class="small">HTML：<code>model_lite/sr_core/html/phase10_vivado_gui_ps_dma.html</code></p>
+      <p class="small">Tcl：<code>model_lite/sr_core/vivado/sr_core_phase10_ps_dma_pynqz2/tcl/create_sr_core_phase10_ps_dma_pynqz2.tcl</code></p>
+      <div class="decision">
+        <p>
+          這份文件只對應 Phase10.6。前面的 Phase10.0 到 10.5 要先完成 wrapper interface、
+          RTL skeleton、input feeder、output reader 和 wrapper-level simulation；最後才進 Vivado。
+        </p>
+      </div>
+    </header>
+
+    <section>
+      <h2>1. 新 IP 與功能</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>IP</th>
+            <th>功能</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>ZYNQ7 Processing System</td>
+            <td>提供 PS、DDR、FCLK、M_AXI_GP0，以及 DMA 存取 DDR 用的 S_AXI_HP0。</td>
+          </tr>
+          <tr>
+            <td>AXI DMA</td>
+            <td>MM2S 把 input 從 PS DDR 送到 PL；S2MM 把 output 從 PL 收回 PS DDR。</td>
+          </tr>
+          <tr>
+            <td>AXI Interconnect 或 SmartConnect</td>
+            <td>把 PS AXI-Lite 控制交易分到 DMA register 和 wrapper register。</td>
+          </tr>
+          <tr>
+            <td>Processor System Reset</td>
+            <td>把 PS reset 轉成 PL 端可用的同步 reset。</td>
+          </tr>
+          <tr>
+            <td>sr_core_ps_dma_wrapper</td>
+            <td>Phase10.1 到 10.5 完成後加入的自訂 wrapper IP。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>2. GUI 建立順序</h2>
+      <ol>
+        <li>建立新專案 <code>sr_core_phase10_ps_dma_pynqz2</code>，不要開舊的 clean-stream project 改。</li>
+        <li>建立 block design：<code>sr_core_phase10_bd</code>。</li>
+        <li>加入 <code>ZYNQ7 Processing System</code>，Run Block Automation，使用 PYNQ-Z2 preset。</li>
+        <li>確認 <code>FCLK_CLK0</code> 啟用，v1 先用 100 MHz。</li>
+        <li>確認 <code>M_AXI_GP0</code> 和 <code>S_AXI_HP0</code> 啟用。</li>
+        <li>加入 <code>AXI DMA</code>，關閉 Scatter Gather，保留 MM2S 和 S2MM。</li>
+        <li>加入 <code>AXI Interconnect</code> 或 <code>SmartConnect</code>。</li>
+        <li>加入 <code>Processor System Reset</code>。</li>
+        <li>加入 Phase10 wrapper IP：<code>sr_core_ps_dma_wrapper</code>。</li>
+        <li>完成拉線與 Address Editor 後，最後才 validate design。</li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>3. Clock / Reset 拉線</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>從哪裡</th>
+            <th>接到哪裡</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><code>processing_system7_0/FCLK_CLK0</code></td><td><code>axi_dma_0/s_axi_lite_aclk</code></td></tr>
+          <tr><td><code>processing_system7_0/FCLK_CLK0</code></td><td><code>axi_dma_0/m_axi_mm2s_aclk</code></td></tr>
+          <tr><td><code>processing_system7_0/FCLK_CLK0</code></td><td><code>axi_dma_0/m_axi_s2mm_aclk</code></td></tr>
+          <tr><td><code>processing_system7_0/FCLK_CLK0</code></td><td><code>sr_core_ps_dma_wrapper/aclk</code></td></tr>
+          <tr><td><code>proc_sys_reset/peripheral_aresetn</code></td><td><code>axi_dma_0/axi_resetn</code></td></tr>
+          <tr><td><code>proc_sys_reset/peripheral_aresetn</code></td><td><code>sr_core_ps_dma_wrapper/aresetn</code></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>4. AXI-Lite 拉線</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>從哪裡</th>
+            <th>接到哪裡</th>
+            <th>用途</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><code>processing_system7_0/M_AXI_GP0</code></td><td>interconnect</td><td>PS 發出控制交易。</td></tr>
+          <tr><td>interconnect</td><td><code>axi_dma_0/S_AXI_LITE</code></td><td>PS 控制 DMA。</td></tr>
+          <tr><td>interconnect</td><td><code>sr_core_ps_dma_wrapper/S_AXI</code></td><td>PS 控制 wrapper。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>5. AXI DMA Stream 拉線</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>從哪裡</th>
+            <th>接到哪裡</th>
+            <th>資料方向</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><code>axi_dma_0/M_AXIS_MM2S</code></td><td><code>sr_core_ps_dma_wrapper/S_AXIS</code></td><td>PS DDR input 到 PL。</td></tr>
+          <tr><td><code>sr_core_ps_dma_wrapper/M_AXIS</code></td><td><code>axi_dma_0/S_AXIS_S2MM</code></td><td>PL output 回 PS DDR。</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>6. DMA DDR Access 拉線</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>從哪裡</th>
+            <th>接到哪裡</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><code>axi_dma_0/M_AXI_MM2S</code></td><td><code>processing_system7_0/S_AXI_HP0</code></td></tr>
+          <tr><td><code>axi_dma_0/M_AXI_S2MM</code></td><td><code>processing_system7_0/S_AXI_HP0</code></td></tr>
+        </tbody>
+      </table>
+      <p>
+        如果 Vivado 自動加入 interconnect 來匯入 HP0，這是合理的；重點是 DMA memory-mapped master
+        最後要能通到 PS DDR。
+      </p>
+    </section>
+
+    <section>
+      <h2>7. Address Editor 建議</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Slave</th>
+            <th>建議 base</th>
+            <th>範圍</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td><code>axi_dma_0/S_AXI_LITE</code></td><td><code>0x4040_0000</code></td><td><code>64K</code></td></tr>
+          <tr><td><code>sr_core_ps_dma_wrapper/S_AXI</code></td><td><code>0x43C0_0000</code></td><td><code>64K</code></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section>
+      <h2>8. PYNQ v1 操作方向</h2>
+      <pre>overlay = Overlay("sr_core_phase10_ps_dma_pynqz2.bit")
+dma = overlay.axi_dma_0
+ctrl = overlay.sr_core_ps_dma_wrapper_0
+
+in_buf = allocate(shape=(128 * 128,), dtype=np.uint8)
+out_buf = allocate(shape=(256 * 256,), dtype=np.uint8)
+
+dma.recvchannel.transfer(out_buf)
+dma.sendchannel.transfer(in_buf)
+ctrl.write(0x00, 1)
+dma.sendchannel.wait()
+dma.recvchannel.wait()
+done = ctrl.read(0x04)</pre>
+      <p>v1 使用 polling，不先接 interrupt。</p>
+    </section>
+
+    <section>
+      <h2>9. 最後才做 Vivado 驗證</h2>
+      <p>
+        Phase10.6 的驗證順序是：validate design、synthesis、implementation、bitstream、export hardware。
+        這些動作要等 Phase10.1 到 10.5 都完成後才跑。
+      </p>
+    </section>
+  </main>
+</body>
+</html>
